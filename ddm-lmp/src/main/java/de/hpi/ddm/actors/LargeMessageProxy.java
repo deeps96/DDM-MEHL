@@ -2,7 +2,10 @@ package de.hpi.ddm.actors;
 
 import akka.Done;
 import akka.NotUsed;
-import akka.actor.*;
+import akka.actor.AbstractLoggingActor;
+import akka.actor.ActorRef;
+import akka.actor.ActorSelection;
+import akka.actor.Props;
 import akka.serialization.Serialization;
 import akka.serialization.SerializationExtension;
 import akka.serialization.Serializer;
@@ -12,21 +15,16 @@ import akka.stream.SourceRef;
 import akka.stream.javadsl.Sink;
 import akka.stream.javadsl.Source;
 import akka.stream.javadsl.StreamRefs;
-import akka.stream.serialization.StreamRefSerializer;
-import com.esotericsoftware.kryo.DefaultSerializer;
-import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.KryoSerializable;
-import com.esotericsoftware.kryo.io.Input;
-import com.esotericsoftware.kryo.io.Output;
 import lombok.*;
 import org.apache.commons.lang3.ArrayUtils;
 import scala.util.Try;
 
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.NotSerializableException;
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.concurrent.CompletionStage;
 
 public class LargeMessageProxy extends AbstractLoggingActor {
@@ -61,16 +59,16 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 	}
 
 	@Data @NoArgsConstructor @AllArgsConstructor
-	public static class MessageOffer implements Serializable {
+	public static class MessageOffer implements Serializable{
 		private static final long serialVersionUID = 9051860651669008815L;
 		private ActorRef sender;
 		private ActorRef receiver;
 		private int serializerId;
 		private int size;
-		private byte[] sourceRef;
+		private SourceRef<byte[]> sourceRef;
 		private String manifest;
 	}
-
+	
 	/////////////////
 	// Actor State //
 	/////////////////
@@ -102,25 +100,32 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 		String manifest = Serializers.manifestFor(serializer, message.getMessage());
 		Try<byte[]> serializeJob = serialization.serialize(message.getMessage());
 		if (serializeJob.isSuccess()) {
-			Source<Byte, NotUsed> source = Source.from(Arrays.asList(ArrayUtils.toObject(serializeJob.get())));
-			CompletionStage<SourceRef<Byte>> completionStage = source.runWith(StreamRefs.sourceRef(), ActorMaterializer.create(this.context().system()));
-			completionStage.whenComplete((sourceRef, e) -> {
-				StreamRefSerializer streamRefSerializer = new StreamRefSerializer((ExtendedActorSystem) this.context().system());
-				receiverProxy.tell(new MessageOffer(this.sender(), message.getReceiver(), serializerId, serializeJob.get().length, streamRefSerializer.toBinary(sourceRef), manifest), this.self());
-			});
+			Source<byte[], NotUsed> source = Source.from(chunkByteArray(serializeJob.get()));
+			CompletionStage<SourceRef<byte[]>> completionStage = source.runWith(StreamRefs.sourceRef(), ActorMaterializer.create(this.context().system()));
+			completionStage.whenComplete((sourceRef, e) ->
+				receiverProxy.tell(new MessageOffer(this.sender(), message.getReceiver(), serializerId, serializeJob.get().length, sourceRef, manifest), this.self()));
 		}
 	}
 
-	private void handle(MessageOffer messageOffer) throws NotSerializableException {
-		StreamRefSerializer streamRefSerializer = new StreamRefSerializer((ExtendedActorSystem) this.context().system());
+	@Getter(AccessLevel.PRIVATE)
+	private final int CHUNK_SIZE = 4096;
+
+	private List<byte[]> chunkByteArray(byte[] in) {
+		int chunkCount = (int) Math.ceil(in.length * 1.0 / getCHUNK_SIZE());
+		List<byte[]> chunks = new ArrayList<>(chunkCount);
+		for (int iChunk = 0; iChunk < chunkCount; iChunk++)
+			chunks.add(Arrays.copyOfRange(in, iChunk * getCHUNK_SIZE(), Math.min((iChunk + 1) * getCHUNK_SIZE(), in.length)));
+		return chunks;
+	}
+
+	private void handle(MessageOffer messageOffer) {
 		Serialization serialization = SerializationExtension.get(getContext().getSystem());
 		ByteArrayOutputStream messageBuffer = new ByteArrayOutputStream(messageOffer.getSize());
-		System.out.println(streamRefSerializer.fromBinary(messageOffer.getSourceRef(), SourceRef.class));
-//		SourceRef<Byte> sourceRef = (SourceRef<Byte>) streamRefSerializer.fromBinary(messageOffer.getSourceRef());
-//		CompletionStage<Done> done = sourceRef.getSource().runWith(Sink.foreach(messageBuffer::write), ActorMaterializer.create(this.context().system()));
-//		done.thenRun(() -> {
-//			byte[] serialized = messageBuffer.toByteArray();
-//			messageOffer.getReceiver().tell(serialization.deserialize(serialized, messageOffer.getSerializerId(), messageOffer.getManifest()).get(), messageOffer.getSender());
-//		});
+		CompletionStage<Done> done = messageOffer.getSourceRef().getSource().runWith(Sink.foreach(messageBuffer::write), ActorMaterializer.create(this.context().system()));
+		done.thenRun(() -> {
+			byte[] serialized = messageBuffer.toByteArray();
+			messageOffer.getReceiver().tell(serialization.deserialize(serialized, messageOffer.getSerializerId(), messageOffer.getManifest()).get(), messageOffer.getSender());
+		});
+
 	}
 }
