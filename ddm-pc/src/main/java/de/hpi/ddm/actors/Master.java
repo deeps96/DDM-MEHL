@@ -62,7 +62,7 @@ public class Master extends AbstractLoggingActor {
 		private static final long serialVersionUID = -4715813113760725017L;
 
 		private Pair<Integer, Integer> range;
-		private String combinationString;
+		private String occurringCharacters;
 		private HashMap<String, String> hashes;
 	}
 	
@@ -123,11 +123,8 @@ public class Master extends AbstractLoggingActor {
 			this.terminate();
 			return;
 		}
-		
-		for (String[] line : message.getLines())
-			System.out.println(Arrays.toString(line));
-		
-		this.collector.tell(new Collector.CollectMessage("Processed batch of size " + message.getLines().size()), this.self());
+
+
 		this.reader.tell(new Reader.ReadMessage(), this.self());
 	}
 	
@@ -147,7 +144,7 @@ public class Master extends AbstractLoggingActor {
 	}
 
 	protected void handle(StoreHashesMessage message) {
-		String compoundKey = getCompoundHashStoreKey(message.combinationString, message.range);
+		String compoundKey = getCompoundHashStoreKey(message.occurringCharacters, message.range);
 
 		hashStore.put(compoundKey, message.hashes);
 	}
@@ -162,7 +159,7 @@ public class Master extends AbstractLoggingActor {
 		this.workers.remove(message.getActor());
 	}
 
-	private String getCompoundHashStoreKey(String combinationString, Pair<Integer, Integer> range) {
-		return combinationString + ":" + range.getLeft() + "-" + range.getRight();
+	private String getCompoundHashStoreKey(String occurringCharacters, Pair<Integer, Integer> range) {
+		return occurringCharacters + ":" + range.getLeft() + "-" + range.getRight();
 	}
 }
