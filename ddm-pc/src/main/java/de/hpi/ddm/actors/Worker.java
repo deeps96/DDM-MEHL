@@ -55,12 +55,6 @@ public class Worker extends AbstractLoggingActor {
 		public boolean hasHashCache() { return getHashCache() != null; }
 	}
 
-	@Data @AllArgsConstructor @NoArgsConstructor
-	public static class CompareResult implements Serializable {
-		private static final long serialVersionUID = 1294419813760526676L;
-		private String matchingPermutation;
-	}
-
 	/////////////////
 	// Actor State //
 	/////////////////
@@ -134,18 +128,22 @@ public class Worker extends AbstractLoggingActor {
 				hashCache,
 				compareMessage.getOffset(),
 				compareMessage.getHash());
+
 		if (result.getLeft())
 			this.getContext()
 					.actorSelection(this.masterSystem.address() + "/user/" + Master.DEFAULT_NAME)
 					.tell(new Master.StoreHashesMessage(compareMessage.getOffset(), compareMessage.getOccurringCharacters(), hashCache), this.self());
-		this.sender().tell(new CompareResult(result.getRight()), this.self());
+		this.sender().tell(new Master.CompareResult(result.getRight()), this.self());
 	}
 
+	// @Return Pair of boolean: if cache has been updated, String: matchingPermutation if found
 	private Pair<Boolean, String> findPermutationForHash(char[] chars, List<String> hashCache, int offset, String targetHash) {
 		ArrayList<String> permutations = new ArrayList<>();
 		heapPermutation(chars, chars.length, permutations);
+
 		boolean updatedCache = false;
 		String matchingPermutation = null;
+
 		for (int iEntry = 0; iEntry < hashCache.size(); iEntry++) {
 			if (hashCache.get(iEntry) == null) {
 				hashCache.set(iEntry, hash(permutations.get(offset + iEntry)));

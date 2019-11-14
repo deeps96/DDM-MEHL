@@ -1,10 +1,8 @@
 package de.hpi.ddm.actors;
 
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
 import akka.actor.AbstractLoggingActor;
@@ -25,13 +23,19 @@ public class Master extends AbstractLoggingActor {
     ////////////////////////
 
     public static final String DEFAULT_NAME = "master";
+    private int jobIdCounter = 0;
 
-    private HashMap<String, List<String>> hashStore;
+    @Data @NoArgsConstructor
+    public class PasswordCrackingJob {
+        private int id;
+        private String hash;
+        private int unresolvedHintCount;
+        private List<Character> remainingChars;
+        private String crackedPassword;
+    }
 
-    String password;
-    private List<Character> remainingChars;
-    private int numDistinctCharsInPassword;
-    private char[] occurringCharacters;
+    private Queue<PasswordCrackingJob> passwordCrackingJobs = new LinkedList<>();
+    private HashMap<String, List<String>> hashStore = new HashMap<>();
 
     public static Props props(final ActorRef reader, final ActorRef collector) {
         return Props.create(Master.class, () -> new Master(reader, collector));
@@ -74,11 +78,10 @@ public class Master extends AbstractLoggingActor {
         private List<String> hashes;
     }
 
-    @Data
-    public static class HintSolvedMessage implements Serializable {
-        private static final long serialVersionUID = 4607466244179175200L;
-
-        private char excludedChar;
+    @Data @AllArgsConstructor @NoArgsConstructor
+    public static class CompareResult implements Serializable {
+        private static final long serialVersionUID = 1294419813760526676L;
+        private String matchingPermutation;
     }
 
     /////////////////
@@ -112,7 +115,7 @@ public class Master extends AbstractLoggingActor {
                 .match(Terminated.class, this::handle)
                 .match(RegistrationMessage.class, this::handle)
                 .match(StoreHashesMessage.class, this::handle)
-                .match(HintSolvedMessage.class, this::handle)
+                .match(CompareResult.class, this::handle)
                 .matchAny(object -> this.log().info("Received unknown message: \"{}\"", object.toString()))
                 .build();
     }
@@ -120,8 +123,9 @@ public class Master extends AbstractLoggingActor {
     protected void handle(StartMessage message) {
         this.startTime = System.currentTimeMillis();
 
-        hashStore = new HashMap<>();
-        remainingChars = new ArrayList<>();
+        jobIdCounter = 0;
+        hashStore.clear();
+        passwordCrackingJobs.clear();
 
         this.reader.tell(new Reader.ReadMessage(), this.self());
     }
@@ -142,8 +146,9 @@ public class Master extends AbstractLoggingActor {
         }
 
         for (String[] line : message.getLines()) {
-            startPasswordCracking(line);
+            startPasswordCrackingJob(line);
         }
+
 
         this.reader.tell(new Reader.ReadMessage(), this.self());
     }
@@ -167,10 +172,8 @@ public class Master extends AbstractLoggingActor {
         hashStore.put(message.occurringCharacters, message.hashes);
     }
 
-    protected void handle(HintSolvedMessage message) {
-        remainingChars.remove(message.excludedChar);
-
-        // if(remainingChars.)
+    protected void handle(CompareResult message) {
+        // TODO
     }
 
     protected void handle(RegistrationMessage message) {
@@ -183,15 +186,23 @@ public class Master extends AbstractLoggingActor {
         this.workers.remove(message.getActor());
     }
 
-    private void startPasswordCracking(String[] line) {
-        String occurringCharacters = line[2];
-        this.occurringCharacters = occurringCharacters.toCharArray();
-        password = line[4];
-        String[] hints = Arrays.copyOfRange(line, 5, line.length);
-        long numberOfPermutations = factorial(occurringCharacters.length() - 1);
+    private void startPasswordCrackingJob(String[] line) {
+        PasswordCrackingJob newJob = new PasswordCrackingJob();
+        newJob.setId(jobIdCounter);
+        jobIdCounter++;
 
-        numDistinctCharsInPassword = occurringCharacters.length() - hints.length; // Does that work?
-        remainingChars.clear();
+        newJob.setHash(line[4]);
+
+        String occurringCharacters = line[2];
+        newJob.setRemainingChars(occurringCharacters.chars()
+                .mapToObj(e->(char)e).collect(Collectors.toList()));
+
+        String[] hints = Arrays.copyOfRange(line, 5, line.length);
+        newJob.setUnresolvedHintCount(hints.length);
+
+        passwordCrackingJobs.add(newJob);
+
+        long numberOfPermutations = factorial(occurringCharacters.length() - 1);
 
         for (String hint : hints) {
             distributeHintCracking(hint, occurringCharacters, numberOfPermutations);
@@ -206,7 +217,7 @@ public class Master extends AbstractLoggingActor {
 
             List<String> hashes = hashStore.get(occurringCharacters).subList(offset, offset + chunkSize);
 
-            Worker.CompareMessage compareMessage = new Worker.CompareMessage(offset, chunkSize, hashes, hint);
+            Worker.CompareMessage compareMessage = new Worker.CompareMessage(offset, chunkSize, hint, occurringCharacters, hashes);
 
             this.workers.get(i).tell(compareMessage, this.sender());
         }
