@@ -3,6 +3,7 @@ package de.hpi.ddm.actors;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 
 import akka.actor.AbstractLoggingActor;
@@ -13,6 +14,8 @@ import akka.actor.Terminated;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.apache.commons.lang3.tuple.Pair;
+import scala.Int;
 
 public class Master extends AbstractLoggingActor {
 
@@ -21,6 +24,8 @@ public class Master extends AbstractLoggingActor {
 	////////////////////////
 	
 	public static final String DEFAULT_NAME = "master";
+
+	private HashMap<String, HashMap<String, String>> hashStore;
 
 	public static Props props(final ActorRef reader, final ActorRef collector) {
 		return Props.create(Master.class, () -> new Master(reader, collector));
@@ -50,6 +55,15 @@ public class Master extends AbstractLoggingActor {
 	@Data
 	public static class RegistrationMessage implements Serializable {
 		private static final long serialVersionUID = 3303081601659723997L;
+	}
+
+	@Data
+	public static class StoreHashesMessage implements Serializable {
+		private static final long serialVersionUID = -4715813113760725017L;
+
+		private Pair<Integer, Integer> range;
+		private String combinationString;
+		private HashMap<String, String> hashes;
 	}
 	
 	/////////////////
@@ -82,12 +96,15 @@ public class Master extends AbstractLoggingActor {
 				.match(BatchMessage.class, this::handle)
 				.match(Terminated.class, this::handle)
 				.match(RegistrationMessage.class, this::handle)
+				.match(StoreHashesMessage.class, this::handle)
 				.matchAny(object -> this.log().info("Received unknown message: \"{}\"", object.toString()))
 				.build();
 	}
 
 	protected void handle(StartMessage message) {
 		this.startTime = System.currentTimeMillis();
+
+		hashStore = new HashMap<>();
 		
 		this.reader.tell(new Reader.ReadMessage(), this.self());
 	}
@@ -129,15 +146,23 @@ public class Master extends AbstractLoggingActor {
 		this.log().info("Algorithm finished in {} ms", executionTime);
 	}
 
+	protected void handle(StoreHashesMessage message) {
+		String compoundKey = getCompoundHashStoreKey(message.combinationString, message.range);
+
+		hashStore.put(compoundKey, message.hashes);
+	}
+
 	protected void handle(RegistrationMessage message) {
 		this.context().watch(this.sender());
 		this.workers.add(this.sender());
-//		this.log().info("Registered {}", this.sender());
 	}
 	
 	protected void handle(Terminated message) {
 		this.context().unwatch(message.getActor());
 		this.workers.remove(message.getActor());
-//		this.log().info("Unregistered {}", message.getActor());
+	}
+
+	private String getCompoundHashStoreKey(String combinationString, Pair<Integer, Integer> range) {
+		return combinationString + ":" + range.getLeft() + "-" + range.getRight();
 	}
 }
