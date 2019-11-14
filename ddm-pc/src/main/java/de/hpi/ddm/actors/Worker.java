@@ -1,8 +1,12 @@
 package de.hpi.ddm.actors;
 
+import java.io.Serializable;
 import java.io.UnsupportedEncodingException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 
 import akka.actor.AbstractLoggingActor;
@@ -16,6 +20,9 @@ import akka.cluster.ClusterEvent.MemberUp;
 import akka.cluster.Member;
 import akka.cluster.MemberStatus;
 import de.hpi.ddm.MasterSystem;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.RequiredArgsConstructor;
 
 public class Worker extends AbstractLoggingActor {
 
@@ -36,6 +43,17 @@ public class Worker extends AbstractLoggingActor {
 	////////////////////
 	// Actor Messages //
 	////////////////////
+
+	@Data @RequiredArgsConstructor @NoArgsConstructor
+	public static class CompareMessage implements Serializable {
+		private static final long serialVersionUID = 3303081601659723997L;
+		private char[] occurringCharacters;
+		private HashMap<String, String> hashCache;
+		private int fromIndex;
+		private int toIndex;
+
+		public boolean hasHashCache() { return getHashCache() != null; }
+	}
 
 	/////////////////
 	// Actor State //
@@ -70,6 +88,7 @@ public class Worker extends AbstractLoggingActor {
 				.match(CurrentClusterState.class, this::handle)
 				.match(MemberUp.class, this::handle)
 				.match(MemberRemoved.class, this::handle)
+				.match(CompareMessage.class, this::handle)
 				.matchAny(object -> this.log().info("Received unknown message: \"{}\"", object.toString()))
 				.build();
 	}
@@ -99,7 +118,18 @@ public class Worker extends AbstractLoggingActor {
 		if (this.masterSystem.equals(message.member()))
 			this.self().tell(PoisonPill.getInstance(), ActorRef.noSender());
 	}
-	
+
+	private void handle(CompareMessage compareMessage) {
+		List<String> permutations = new ArrayList<>();
+		if (compareMessage.hasHashCache()) {
+			// WiP
+		}
+
+//		heapPermutation(compareMessage.getOccurringCharacters(), compareMessage.getOccurringCharacters().length, permutations);
+//		permutations = permutations.subList(compareMessage.getFromIndex(), compareMessage.getToIndex());
+
+	}
+
 	private String hash(String line) {
 		try {
 			MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -119,13 +149,13 @@ public class Worker extends AbstractLoggingActor {
 	// Generating all permutations of an array using Heap's Algorithm
 	// https://en.wikipedia.org/wiki/Heap's_algorithm
 	// https://www.geeksforgeeks.org/heaps-algorithm-for-generating-permutations/
-	private void heapPermutation(char[] a, int size, int n, List<String> l) {
+	private void heapPermutation(char[] a, int size, List<String> l) {
 		// If size is 1, store the obtained permutation
 		if (size == 1)
 			l.add(new String(a));
 
 		for (int i = 0; i < size; i++) {
-			heapPermutation(a, size - 1, n, l);
+			heapPermutation(a, size - 1, l);
 
 			// If size is odd, swap first and last element
 			if (size % 2 == 1) {
