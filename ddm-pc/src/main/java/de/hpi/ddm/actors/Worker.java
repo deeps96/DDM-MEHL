@@ -4,10 +4,7 @@ import java.io.Serializable;
 import java.io.UnsupportedEncodingException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
 
 import akka.actor.AbstractLoggingActor;
 import akka.actor.ActorRef;
@@ -20,9 +17,11 @@ import akka.cluster.ClusterEvent.MemberUp;
 import akka.cluster.Member;
 import akka.cluster.MemberStatus;
 import de.hpi.ddm.MasterSystem;
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.tuple.Pair;
 
 public class Worker extends AbstractLoggingActor {
 
@@ -44,15 +43,22 @@ public class Worker extends AbstractLoggingActor {
 	// Actor Messages //
 	////////////////////
 
-	@Data @RequiredArgsConstructor @NoArgsConstructor
+	@Data @AllArgsConstructor @NoArgsConstructor
 	public static class CompareMessage implements Serializable {
 		private static final long serialVersionUID = 3303081601659723997L;
-		private char[] occurringCharacters;
-		private HashMap<String, String> hashCache;
-		private int fromIndex;
-		private int toIndex;
+		private int offset;
+		private int length;
+		private String hash;
+		private String occurringCharacters;
+		private List<String> hashCache;
 
 		public boolean hasHashCache() { return getHashCache() != null; }
+	}
+
+	@Data @AllArgsConstructor @NoArgsConstructor
+	public static class CompareResult implements Serializable {
+		private static final long serialVersionUID = 1294419813760526676L;
+		private String matchingPermutation;
 	}
 
 	/////////////////
@@ -120,14 +126,43 @@ public class Worker extends AbstractLoggingActor {
 	}
 
 	private void handle(CompareMessage compareMessage) {
-		List<String> permutations = new ArrayList<>();
-		if (compareMessage.hasHashCache()) {
-			// WiP
+		List<String> hashCache = compareMessage.hasHashCache() ?
+				compareMessage.getHashCache() : Arrays.asList(new String[compareMessage.getLength()]);
+
+		Pair<Boolean, String> result = findPermutationForHash(
+				compareMessage.getOccurringCharacters().toCharArray(),
+				hashCache,
+				compareMessage.getOffset(),
+				compareMessage.getHash());
+		if (result.getLeft())
+			this.getContext()
+					.actorSelection(this.masterSystem.address() + "/user/" + Master.DEFAULT_NAME)
+					.tell(new Master.StoreHashesMessage(compareMessage.getOffset(), compareMessage.getOccurringCharacters(), hashCache), this.self());
+		this.sender().tell(new CompareResult(result.getRight()), this.self());
+	}
+
+	private Pair<Boolean, String> findPermutationForHash(char[] chars, List<String> hashCache, int offset, String targetHash) {
+		ArrayList<String> permutations = new ArrayList<>();
+		heapPermutation(chars, chars.length, permutations);
+		boolean updatedCache = false;
+		String matchingPermutation = null;
+		for (int iEntry = 0; iEntry < hashCache.size(); iEntry++) {
+			if (hashCache.get(iEntry) == null) {
+				hashCache.set(iEntry, hash(permutations.get(offset + iEntry)));
+				updatedCache = true;
+			}
+			if (hashCache.get(iEntry).equals(targetHash)) {
+				matchingPermutation = permutations.get(offset + iEntry);
+				break;
+			}
 		}
+		return Pair.of(updatedCache, matchingPermutation);
+	}
 
-//		heapPermutation(compareMessage.getOccurringCharacters(), compareMessage.getOccurringCharacters().length, permutations);
-//		permutations = permutations.subList(compareMessage.getFromIndex(), compareMessage.getToIndex());
-
+	private HashMap<String, String> hash(List<String> permutations) {
+		HashMap<String, String> hashes = new HashMap<>();
+		permutations.forEach(code -> hashes.put(code, hash(code)));
+		return hashes;
 	}
 
 	private String hash(String line) {
