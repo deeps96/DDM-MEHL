@@ -1,6 +1,7 @@
 package de.hpi.ddm.actors;
 
 import akka.actor.*;
+import de.hpi.ddm.Utils;
 import de.hpi.ddm.structures.PasswordCrackingJob;
 import lombok.*;
 import org.apache.commons.lang3.tuple.Pair;
@@ -9,6 +10,8 @@ import java.io.Serializable;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+
+import static de.hpi.ddm.Utils.heapPermutation;
 
 @Getter(AccessLevel.PRIVATE)
 public class Master extends AbstractLoggingActor {
@@ -152,13 +155,15 @@ public class Master extends AbstractLoggingActor {
                     getTasks().put(job.getId(), createPasswordCrackingTasks(job));
             } else {
                 job.setCrackedPassword(message.getResolvedHashes().get(0).getRight());
+                log().info(job.getCrackedPassword());
                 getTasks().remove(job.getId());
                 getPasswordCrackingJobMap().remove(job.getId());
                 sendSolvedPasswordsToCollector();
             }
+            printJobStatus();
         }
 
-        printJobStatus();
+        System.out.print(".");
 
         if (getPasswordCrackingJobs().isEmpty())
             getReader().tell(new Reader.ReadMessage(), self());
@@ -169,10 +174,11 @@ public class Master extends AbstractLoggingActor {
     }
 
     private void printJobStatus() {
-        System.out.println("====================================");
+        log().info("");
+        log().info("====================================");
         getTasks().forEach((id, tasks) ->
-                System.out.println("Job " + id + " remaining: " + tasks.size()));
-        System.out.println("====================================");
+                log().info("<Job " + id + "> Tasks remaining: " + tasks.size() + " Hints unresolved: " + getPasswordCrackingJobMap().get(id).getUnresolvedHintCount()));
+        log().info("====================================");
     }
 
     private void sendSolvedPasswordsToCollector() {
@@ -236,7 +242,10 @@ public class Master extends AbstractLoggingActor {
 
     private Queue<Worker.CompareMessage> createTasks(PasswordCrackingJob passwordCrackingJob, LinkedList<String> hashes, int permutationLength) {
         String occurringCharacters = passwordCrackingJob.getRemainingCharsAsString();
-        int totalPermutations = factorial(occurringCharacters.length() - 1);
+        LinkedList<String> permutations = new LinkedList<>();
+        heapPermutation(occurringCharacters.toCharArray(), permutationLength, permutations);
+        passwordCrackingJob.setPermutations(permutations);
+        int totalPermutations = permutations.size();
         if (!getHashStore().containsKey(Pair.of(occurringCharacters, permutationLength)))
             getHashStore().put(Pair.of(occurringCharacters, permutationLength), Arrays.asList(new String[totalPermutations]));
 
@@ -251,6 +260,7 @@ public class Master extends AbstractLoggingActor {
                     occurringCharacters,
                     null, // will be updated with the freshest cache in sendNextTaskToWorker, right before sending
                     hashes,
+                    null, // will be updated with the freshest cache in sendNextTaskToWorker, right before sending
                     passwordCrackingJob.getId()
             ));
         }
@@ -272,14 +282,12 @@ public class Master extends AbstractLoggingActor {
                     getHashStore()
                             .get(Pair.of(task.getOccurringCharacters(), task.getPermutationSize()))
                             .subList(task.getOffset(), task.getOffset() + task.getLength())));
+            task.setPermutations(new LinkedList<>(
+                    getPasswordCrackingJobMap()
+                            .get(passwordCrackingJobId).getPermutations()
+                            .subList(task.getOffset(), task.getOffset() + task.getLength())));
             worker.tell(task, self());
         }
-    }
-
-    private int factorial(int n) {
-        return IntStream
-                .rangeClosed(1, n)
-                .reduce(1, (int x, int y) -> x * y);
     }
 
     private void handle(RegistrationMessage message) {

@@ -13,6 +13,7 @@ public class PasswordCrackingJob {
     private int unresolvedHintCount;
     private LinkedList<Character> remainingChars;
     private LinkedList<String> hints;
+    private LinkedList<String> permutations;
     private String crackedPassword = null;
     private String hash;
     private String id;
