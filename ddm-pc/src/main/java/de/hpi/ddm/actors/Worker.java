@@ -17,10 +17,7 @@ import lombok.NoArgsConstructor;
 import org.apache.commons.lang3.tuple.Pair;
 
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
 
 import static de.hpi.ddm.Utils.hash;
 import static de.hpi.ddm.Utils.heapPermutation;
@@ -52,7 +49,6 @@ public class Worker extends AbstractLoggingActor {
 		private int length;
 		private int permutationSize;
 		private String occurringCharacters;
-		private LinkedList<String> hashCache;
 		private LinkedList<String> hashes;
 		private LinkedList<String> permutations;
 		private String jobId;
@@ -124,7 +120,7 @@ public class Worker extends AbstractLoggingActor {
 
 	private void handle(CompareMessage compareMessage) {
 		Pair<Boolean, LinkedList<Pair<String, String>>> result = findPermutationForHash(
-				compareMessage.getHashCache(),
+				new LinkedList<>(Arrays.asList(new String[compareMessage.getLength()])),
 				compareMessage.getHashes(),
 				compareMessage.getPermutations());
 

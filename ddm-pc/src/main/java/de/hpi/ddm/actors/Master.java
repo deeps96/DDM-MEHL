@@ -238,9 +238,8 @@ public class Master extends AbstractLoggingActor {
                     (iChunk + 1) * getCHUNK_SIZE() < totalPermutations ? getCHUNK_SIZE() : totalPermutations - offset,
                     permutationLength,
                     occurringCharacters,
-                    null, // will be updated with the freshest cache in sendNextTaskToWorker, right before sending
                     hashes,
-                    null, // will be updated with the freshest cache in sendNextTaskToWorker, right before sending
+                    null, // will be updated right before sending
                     passwordCrackingJob.getId()
             ));
         }
@@ -258,7 +257,6 @@ public class Master extends AbstractLoggingActor {
     private void sendNextTaskToWorker(ActorRef worker, String passwordCrackingJobId) {
         Worker.CompareMessage task = getTasks().get(passwordCrackingJobId).poll();
         if (task != null) {
-            task.setHashCache(new LinkedList<>(Arrays.asList(new String[task.getLength()])));
             task.setPermutations(new LinkedList<>(
                     getPasswordCrackingJobMap()
                             .get(passwordCrackingJobId).getPermutations()
