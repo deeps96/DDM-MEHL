@@ -1,7 +1,6 @@
 package de.hpi.ddm.actors;
 
 import akka.actor.*;
-import de.hpi.ddm.Utils;
 import de.hpi.ddm.structures.PasswordCrackingJob;
 import lombok.*;
 import org.apache.commons.lang3.tuple.Pair;
@@ -9,7 +8,6 @@ import org.apache.commons.lang3.tuple.Pair;
 import java.io.Serializable;
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 import static de.hpi.ddm.Utils.heapPermutation;
 
@@ -234,7 +232,7 @@ public class Master extends AbstractLoggingActor {
         );
     }
 
-    private final int CHUNK_SIZE = 1024;
+    private final int CHUNK_SIZE = 2048;
 
     private Queue<Worker.CompareMessage> createHintCrackingTasks(PasswordCrackingJob passwordCrackingJob) {
         return createTasks(passwordCrackingJob, passwordCrackingJob.getHints(), passwordCrackingJob.getRemainingChars().size());
