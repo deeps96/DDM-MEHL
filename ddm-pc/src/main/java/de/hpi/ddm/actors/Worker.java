@@ -128,10 +128,6 @@ public class Worker extends AbstractLoggingActor {
 				compareMessage.getHashes(),
 				compareMessage.getPermutations());
 
-		if (result.getLeft())
-			this.getContext()
-					.actorSelection(this.masterSystem.address() + "/user/" + Master.DEFAULT_NAME)
-					.tell(new Master.StoreHashesMessage(compareMessage.getOffset(), compareMessage.getPermutationSize(), compareMessage.getOccurringCharacters(), compareMessage.getHashCache()), this.self());
 		this.sender()
 				.tell(new Master.CompareResult(result.getRight(), compareMessage.getJobId()), this.self());
 	}

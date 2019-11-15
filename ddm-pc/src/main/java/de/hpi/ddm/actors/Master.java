@@ -53,16 +53,6 @@ public class Master extends AbstractLoggingActor {
     }
 
     @Data @AllArgsConstructor @NoArgsConstructor
-    static class StoreHashesMessage implements Serializable {
-        private static final long serialVersionUID = -4715813113760725017L;
-
-        private int offset;
-        private int permutationLength;
-        private String occurringCharacters;
-        private LinkedList<String> hashes;
-    }
-
-    @Data @AllArgsConstructor @NoArgsConstructor
     static class CompareResult implements Serializable {
         private static final long serialVersionUID = 1294419813760526676L;
         private LinkedList<Pair<String, String>> resolvedHashes;
@@ -108,7 +98,6 @@ public class Master extends AbstractLoggingActor {
                 .match(BatchMessage.class, this::handle)
                 .match(Terminated.class, this::handle)
                 .match(RegistrationMessage.class, this::handle)
-                .match(StoreHashesMessage.class, this::handle)
                 .match(CompareResult.class, this::handle)
                 .matchAny(object -> this.log().info("Received unknown message: \"{}\"", object.toString()))
                 .build();
@@ -135,13 +124,8 @@ public class Master extends AbstractLoggingActor {
             getTasks().put(passwordCrackingJob.getId(), createHintCrackingTasks(passwordCrackingJob));
             break; // debug <- delete this line
         }
+        printJobStatus();
         getWorkers().forEach(this::sendNextTaskToWorker);
-    }
-
-    private void handle(StoreHashesMessage message) {
-        List<String> hashes = getHashStore().get(Pair.of(message.getOccurringCharacters(), message.getPermutationLength()));
-        for (int iHash = 0; iHash < message.getHashes().size(); iHash++)
-            hashes.set(message.getOffset() + iHash, message.getHashes().get(iHash));
     }
 
     private void handle(CompareResult message) {
@@ -232,7 +216,7 @@ public class Master extends AbstractLoggingActor {
         );
     }
 
-    private final int CHUNK_SIZE = 2048;
+    private final int CHUNK_SIZE = 16_384;
 
     private Queue<Worker.CompareMessage> createHintCrackingTasks(PasswordCrackingJob passwordCrackingJob) {
         return createTasks(passwordCrackingJob, passwordCrackingJob.getHints(), passwordCrackingJob.getRemainingChars().size());
@@ -244,8 +228,6 @@ public class Master extends AbstractLoggingActor {
         heapPermutation(occurringCharacters.toCharArray(), permutationLength, permutations);
         passwordCrackingJob.setPermutations(permutations);
         int totalPermutations = permutations.size();
-        if (!getHashStore().containsKey(Pair.of(occurringCharacters, permutationLength)))
-            getHashStore().put(Pair.of(occurringCharacters, permutationLength), Arrays.asList(new String[totalPermutations]));
 
         int chunkCount = (int) Math.ceil((double) totalPermutations / getCHUNK_SIZE());
         Queue<Worker.CompareMessage> hintCrackingTasks = new LinkedList<>();
@@ -276,10 +258,7 @@ public class Master extends AbstractLoggingActor {
     private void sendNextTaskToWorker(ActorRef worker, String passwordCrackingJobId) {
         Worker.CompareMessage task = getTasks().get(passwordCrackingJobId).poll();
         if (task != null) {
-            task.setHashCache(new LinkedList<>(
-                    getHashStore()
-                            .get(Pair.of(task.getOccurringCharacters(), task.getPermutationSize()))
-                            .subList(task.getOffset(), task.getOffset() + task.getLength())));
+            task.setHashCache(new LinkedList<>(Arrays.asList(new String[task.getLength()])));
             task.setPermutations(new LinkedList<>(
                     getPasswordCrackingJobMap()
                             .get(passwordCrackingJobId).getPermutations()
