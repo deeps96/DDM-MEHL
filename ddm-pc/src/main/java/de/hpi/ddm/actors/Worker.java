@@ -17,10 +17,7 @@ import akka.cluster.ClusterEvent.MemberUp;
 import akka.cluster.Member;
 import akka.cluster.MemberStatus;
 import de.hpi.ddm.MasterSystem;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.RequiredArgsConstructor;
+import lombok.*;
 import org.apache.commons.lang3.tuple.Pair;
 
 public class Worker extends AbstractLoggingActor {
@@ -48,11 +45,10 @@ public class Worker extends AbstractLoggingActor {
 		private static final long serialVersionUID = 3303081601659723997L;
 		private int offset;
 		private int length;
-		private String hash;
 		private String occurringCharacters;
 		private List<String> hashCache;
-
-		public boolean hasHashCache() { return getHashCache() != null; }
+		private List<String> hashes;
+		private UUID jobId;
 	}
 
 	/////////////////
@@ -120,41 +116,41 @@ public class Worker extends AbstractLoggingActor {
 	}
 
 	private void handle(CompareMessage compareMessage) {
-		List<String> hashCache = compareMessage.hasHashCache() ?
-				compareMessage.getHashCache() : Arrays.asList(new String[compareMessage.getLength()]);
-
-		Pair<Boolean, String> result = findPermutationForHash(
+		Pair<Boolean, List<Pair<String, String>>> result = findPermutationForHash(
 				compareMessage.getOccurringCharacters().toCharArray(),
-				hashCache,
+				compareMessage.getHashCache(),
 				compareMessage.getOffset(),
-				compareMessage.getHash());
+				compareMessage.getHashes());
 
 		if (result.getLeft())
 			this.getContext()
 					.actorSelection(this.masterSystem.address() + "/user/" + Master.DEFAULT_NAME)
-					.tell(new Master.StoreHashesMessage(compareMessage.getOffset(), compareMessage.getOccurringCharacters(), hashCache), this.self());
-		this.sender().tell(new Master.CompareResult(result.getRight()), this.self());
+					.tell(new Master.StoreHashesMessage(compareMessage.getOffset(), compareMessage.getOccurringCharacters(), compareMessage.getHashCache()), this.self());
+		this.sender()
+				.tell(new Master.CompareResult(result.getRight(), compareMessage.getJobId()), this.self());
 	}
 
-	// @Return Pair of boolean: if cache has been updated, String: matchingPermutation if found
-	private Pair<Boolean, String> findPermutationForHash(char[] chars, List<String> hashCache, int offset, String targetHash) {
+	private Pair<Boolean, List<Pair<String, String>>> findPermutationForHash(char[] chars, List<String> hashCache, int offset, List<String> targetHashes) {
 		ArrayList<String> permutations = new ArrayList<>();
 		heapPermutation(chars, chars.length, permutations);
 
 		boolean updatedCache = false;
-		String matchingPermutation = null;
-
+		List<Pair<String, String>> resolvedHashes = new LinkedList<>();
 		for (int iEntry = 0; iEntry < hashCache.size(); iEntry++) {
 			if (hashCache.get(iEntry) == null) {
 				hashCache.set(iEntry, hash(permutations.get(offset + iEntry)));
 				updatedCache = true;
 			}
-			if (hashCache.get(iEntry).equals(targetHash)) {
-				matchingPermutation = permutations.get(offset + iEntry);
-				break;
+			for (Iterator<String> targetHashIterator = targetHashes.iterator(); targetHashIterator.hasNext();) {
+				String targetHash = targetHashIterator.next();
+				if (hashCache.get(iEntry).equals(targetHash)) {
+					resolvedHashes.add(Pair.of(targetHash, permutations.get(offset + iEntry)));
+					targetHashIterator.remove();
+				}
 			}
+			if (targetHashes.size() == 0) break;
 		}
-		return Pair.of(updatedCache, matchingPermutation);
+		return Pair.of(updatedCache, resolvedHashes);
 	}
 
 	private HashMap<String, String> hash(List<String> permutations) {

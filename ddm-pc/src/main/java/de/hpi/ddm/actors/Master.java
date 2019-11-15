@@ -1,21 +1,15 @@
 package de.hpi.ddm.actors;
 
+import akka.actor.*;
+import de.hpi.ddm.structures.PasswordCrackingJob;
+import lombok.*;
+import org.apache.commons.lang3.tuple.Pair;
+
 import java.io.Serializable;
 import java.util.*;
-import java.util.stream.Collectors;
-import java.util.stream.LongStream;
+import java.util.stream.IntStream;
 
-import akka.actor.AbstractLoggingActor;
-import akka.actor.ActorRef;
-import akka.actor.PoisonPill;
-import akka.actor.Props;
-import akka.actor.Terminated;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import org.apache.commons.lang3.tuple.Pair;
-import scala.Int;
-
+@Getter(AccessLevel.PRIVATE)
 public class Master extends AbstractLoggingActor {
 
     ////////////////////////
@@ -23,19 +17,6 @@ public class Master extends AbstractLoggingActor {
     ////////////////////////
 
     public static final String DEFAULT_NAME = "master";
-    private int jobIdCounter = 0;
-
-    @Data @NoArgsConstructor
-    public class PasswordCrackingJob {
-        private int id;
-        private String hash;
-        private int unresolvedHintCount;
-        private List<Character> remainingChars;
-        private String crackedPassword;
-    }
-
-    private Queue<PasswordCrackingJob> passwordCrackingJobs = new LinkedList<>();
-    private HashMap<String, List<String>> hashStore = new HashMap<>();
 
     public static Props props(final ActorRef reader, final ActorRef collector) {
         return Props.create(Master.class, () -> new Master(reader, collector));
@@ -69,7 +50,7 @@ public class Master extends AbstractLoggingActor {
         private static final long serialVersionUID = 3303081601659723997L;
     }
 
-    @Data
+    @Data @AllArgsConstructor @NoArgsConstructor
     public static class StoreHashesMessage implements Serializable {
         private static final long serialVersionUID = -4715813113760725017L;
 
@@ -81,7 +62,12 @@ public class Master extends AbstractLoggingActor {
     @Data @AllArgsConstructor @NoArgsConstructor
     public static class CompareResult implements Serializable {
         private static final long serialVersionUID = 1294419813760526676L;
-        private String matchingPermutation;
+        private List<Pair<String, String>> resolvedHashes;
+        private UUID jobId;
+
+        public boolean hasResult() {
+            return getResolvedHashes().size() > 0;
+        }
     }
 
     /////////////////
@@ -93,6 +79,11 @@ public class Master extends AbstractLoggingActor {
     private final List<ActorRef> workers;
 
     private long startTime;
+
+    private final HashMap<String, List<String>> hashStore = new HashMap<>();
+    private final HashMap<UUID, PasswordCrackingJob> passwordCrackingJobMap = new HashMap<>();
+    private final HashMap<UUID, Queue<Worker.CompareMessage>> tasks = new HashMap<>();
+    private final Queue<PasswordCrackingJob> passwordCrackingJobs = new LinkedList<>();
 
     /////////////////////
     // Actor Lifecycle //
@@ -122,35 +113,107 @@ public class Master extends AbstractLoggingActor {
 
     protected void handle(StartMessage message) {
         this.startTime = System.currentTimeMillis();
+        getPasswordCrackingJobs().clear();
 
-        jobIdCounter = 0;
-        hashStore.clear();
-        passwordCrackingJobs.clear();
-
-        this.reader.tell(new Reader.ReadMessage(), this.self());
+        getReader().tell(new Reader.ReadMessage(), self());
     }
 
     protected void handle(BatchMessage message) {
-
-        ///////////////////////////////////////////////////////////////////////////////////////////////////////
-        // The input file is read in batches for two reasons: /////////////////////////////////////////////////
-        // 1. If we distribute the batches early, we might not need to hold the entire input data in memory. //
-        // 2. If we process the batches early, we can achieve latency hiding. /////////////////////////////////
-        // TODO: Implement the processing of the data for the concrete assignment. ////////////////////////////
-        ///////////////////////////////////////////////////////////////////////////////////////////////////////
-
         if (message.getLines().isEmpty()) {
-            this.collector.tell(new Collector.PrintMessage(), this.self());
-            this.terminate();
+            getCollector().tell(new Collector.PrintMessage(), self());
+            terminate();
             return;
         }
 
         for (String[] line : message.getLines()) {
-            startPasswordCrackingJob(line);
+            PasswordCrackingJob passwordCrackingJob = parsePasswordCrackingJob(line);
+            getPasswordCrackingJobs().add(passwordCrackingJob);
+            getPasswordCrackingJobMap().put(passwordCrackingJob.getId(), passwordCrackingJob);
+            getTasks().put(passwordCrackingJob.getId(), createHintCrackingTasks(passwordCrackingJob));
         }
+        getWorkers().forEach(this::sendNextTaskToWorker);
+    }
 
+    private void handle(StoreHashesMessage message) {
+        List<String> hashes = getHashStore().get(message.getOccurringCharacters());
+        for (int iHash = 0; iHash < message.getHashes().size(); iHash++)
+            hashes.set(message.getOffset() + iHash, message.getHashes().get(iHash));
+    }
 
-        this.reader.tell(new Reader.ReadMessage(), this.self());
+    private void handle(CompareResult message) {
+        // TODO
+
+//        this.reader.tell(new Reader.ReadMessage(), this.self());
+    }
+
+    private final int CSV_HASH_COLUMN_INDEX = 4;
+    private final int CSV_OCCURRING_CHARS_COLUMN_INDEX = 2;
+    private final int CSV_HINT_START_COLUMN_INDEX = 5;
+
+    private PasswordCrackingJob parsePasswordCrackingJob(String[] line) {
+        return new PasswordCrackingJob(
+                UUID.randomUUID(),
+                line[getCSV_OCCURRING_CHARS_COLUMN_INDEX()],
+                line[getCSV_HASH_COLUMN_INDEX()],
+                Arrays.asList(Arrays.copyOfRange(line, getCSV_HINT_START_COLUMN_INDEX(), line.length))
+        );
+    }
+
+    private final int CHUNK_SIZE = 1024;
+
+    private Queue<Worker.CompareMessage> createHintCrackingTasks(PasswordCrackingJob passwordCrackingJob) {
+        String occurringCharacters = passwordCrackingJob.getRemainingCharsAsString();
+        int totalPermutations = factorial(occurringCharacters.length() - 1);
+        if (!getHashStore().containsKey(occurringCharacters))
+            getHashStore().put(occurringCharacters, Arrays.asList(new String[totalPermutations]));
+
+        int chunkCount = (int) Math.ceil((double) totalPermutations / getCHUNK_SIZE());
+        Queue<Worker.CompareMessage> hintCrackingTasks = new LinkedList<>();
+        for (int iChunk = 0; iChunk < chunkCount; iChunk++) {
+            int offset = iChunk * getCHUNK_SIZE();
+            hintCrackingTasks.add(new Worker.CompareMessage(
+                    offset,
+                    (iChunk + 1) * getCHUNK_SIZE() < totalPermutations ? getCHUNK_SIZE() : totalPermutations - offset,
+                    occurringCharacters,
+                    null, // will be updated with the freshest cache in sendNextTaskToWorker, right before sending
+                    passwordCrackingJob.getHints(),
+                    passwordCrackingJob.getId()
+            ));
+        }
+        return hintCrackingTasks;
+    }
+
+    private void sendNextTaskToWorker(ActorRef worker) {
+        for (PasswordCrackingJob job : getPasswordCrackingJobs())
+            if (getTasks().get(job.getId()).peek() != null) {
+                sendNextTaskToWorker(worker, job.getId());
+                return;
+            }
+    }
+
+    private void sendNextTaskToWorker(ActorRef worker, UUID passwordCrackingJobId) {
+        Worker.CompareMessage task = getTasks().get(passwordCrackingJobId).poll();
+        if (task != null) {
+            task.setHashCache(getHashStore().get(task.getOccurringCharacters()).subList(task.getOffset(), task.getOffset() + task.getLength()));
+            worker.tell(task, self());
+        }
+    }
+
+    private int factorial(int n) {
+        return IntStream
+                .rangeClosed(1, n)
+                .reduce(1, (int x, int y) -> x * y);
+    }
+
+    protected void handle(RegistrationMessage message) {
+        context().watch(sender());
+        getWorkers().add(sender());
+        sendNextTaskToWorker(sender());
+    }
+
+    protected void handle(Terminated message) {
+        this.context().unwatch(message.getActor());
+        this.workers.remove(message.getActor());
     }
 
     protected void terminate() {
@@ -166,65 +229,5 @@ public class Master extends AbstractLoggingActor {
 
         long executionTime = System.currentTimeMillis() - this.startTime;
         this.log().info("Algorithm finished in {} ms", executionTime);
-    }
-
-    protected void handle(StoreHashesMessage message) {
-        hashStore.put(message.occurringCharacters, message.hashes);
-    }
-
-    protected void handle(CompareResult message) {
-        // TODO
-    }
-
-    protected void handle(RegistrationMessage message) {
-        this.context().watch(this.sender());
-        this.workers.add(this.sender());
-    }
-
-    protected void handle(Terminated message) {
-        this.context().unwatch(message.getActor());
-        this.workers.remove(message.getActor());
-    }
-
-    private void startPasswordCrackingJob(String[] line) {
-        PasswordCrackingJob newJob = new PasswordCrackingJob();
-        newJob.setId(jobIdCounter);
-        jobIdCounter++;
-
-        newJob.setHash(line[4]);
-
-        String occurringCharacters = line[2];
-        newJob.setRemainingChars(occurringCharacters.chars()
-                .mapToObj(e->(char)e).collect(Collectors.toList()));
-
-        String[] hints = Arrays.copyOfRange(line, 5, line.length);
-        newJob.setUnresolvedHintCount(hints.length);
-
-        passwordCrackingJobs.add(newJob);
-
-        long numberOfPermutations = factorial(occurringCharacters.length() - 1);
-
-        for (String hint : hints) {
-            distributeHintCracking(hint, occurringCharacters, numberOfPermutations);
-        }
-    }
-
-    private void distributeHintCracking(String hint, String occurringCharacters, long numberOfPermutations) {
-        int chunkSize = (int) Math.ceil(numberOfPermutations / this.workers.size());
-
-        for(int i = 0; i < this.workers.size(); i++) {
-            int offset = i * chunkSize;
-
-            List<String> hashes = hashStore.get(occurringCharacters).subList(offset, offset + chunkSize);
-
-            Worker.CompareMessage compareMessage = new Worker.CompareMessage(offset, chunkSize, hint, occurringCharacters, hashes);
-
-            this.workers.get(i).tell(compareMessage, this.sender());
-        }
-    }
-
-    private long factorial(int n) {
-        return LongStream.rangeClosed(1, n)
-                .reduce(1, (long x, long y) -> x * y);
     }
 }
