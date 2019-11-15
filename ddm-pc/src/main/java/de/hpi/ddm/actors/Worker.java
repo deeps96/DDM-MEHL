@@ -41,14 +41,15 @@ public class Worker extends AbstractLoggingActor {
 	////////////////////
 
 	@Data @AllArgsConstructor @NoArgsConstructor
-	public static class CompareMessage implements Serializable {
+	static class CompareMessage implements Serializable {
 		private static final long serialVersionUID = 3303081601659723997L;
 		private int offset;
 		private int length;
+		private int permutationSize;
 		private String occurringCharacters;
-		private List<String> hashCache;
-		private List<String> hashes;
-		private UUID jobId;
+		private LinkedList<String> hashCache;
+		private LinkedList<String> hashes;
+		private String jobId;
 	}
 
 	/////////////////
@@ -116,8 +117,9 @@ public class Worker extends AbstractLoggingActor {
 	}
 
 	private void handle(CompareMessage compareMessage) {
-		Pair<Boolean, List<Pair<String, String>>> result = findPermutationForHash(
+		Pair<Boolean, LinkedList<Pair<String, String>>> result = findPermutationForHash(
 				compareMessage.getOccurringCharacters().toCharArray(),
+				compareMessage.getPermutationSize(),
 				compareMessage.getHashCache(),
 				compareMessage.getOffset(),
 				compareMessage.getHashes());
@@ -125,17 +127,17 @@ public class Worker extends AbstractLoggingActor {
 		if (result.getLeft())
 			this.getContext()
 					.actorSelection(this.masterSystem.address() + "/user/" + Master.DEFAULT_NAME)
-					.tell(new Master.StoreHashesMessage(compareMessage.getOffset(), compareMessage.getOccurringCharacters(), compareMessage.getHashCache()), this.self());
+					.tell(new Master.StoreHashesMessage(compareMessage.getOffset(), compareMessage.getPermutationSize(), compareMessage.getOccurringCharacters(), compareMessage.getHashCache()), this.self());
 		this.sender()
 				.tell(new Master.CompareResult(result.getRight(), compareMessage.getJobId()), this.self());
 	}
 
-	private Pair<Boolean, List<Pair<String, String>>> findPermutationForHash(char[] chars, List<String> hashCache, int offset, List<String> targetHashes) {
+	private Pair<Boolean, LinkedList<Pair<String, String>>> findPermutationForHash(char[] chars, int permutationSize, List<String> hashCache, int offset, List<String> targetHashes) {
 		ArrayList<String> permutations = new ArrayList<>();
-		heapPermutation(chars, chars.length, permutations);
+		heapPermutation(chars, permutationSize, permutations);
 
 		boolean updatedCache = false;
-		List<Pair<String, String>> resolvedHashes = new LinkedList<>();
+		LinkedList<Pair<String, String>> resolvedHashes = new LinkedList<>();
 		for (int iEntry = 0; iEntry < hashCache.size(); iEntry++) {
 			if (hashCache.get(iEntry) == null) {
 				hashCache.set(iEntry, hash(permutations.get(offset + iEntry)));
