@@ -121,9 +121,10 @@ public class Master extends AbstractLoggingActor {
             PasswordCrackingJob passwordCrackingJob = parsePasswordCrackingJob(line);
             getPasswordCrackingJobs().add(passwordCrackingJob);
             getPasswordCrackingJobMap().put(passwordCrackingJob.getId(), passwordCrackingJob);
-            getTasks().put(passwordCrackingJob.getId(), createHintCrackingTasks(passwordCrackingJob));
-            break; // debug <- delete this line
         }
+
+        prepareNextPasswordCrackingJob();
+
         printJobStatus();
         getWorkers().forEach(this::sendNextTaskToWorker);
     }
@@ -151,8 +152,19 @@ public class Master extends AbstractLoggingActor {
             getReader().tell(new Reader.ReadMessage(), self());
         else if (getTasks().containsKey(message.getJobId()) && !getTasks().get(message.getJobId()).isEmpty())
             sendNextTaskToWorker(sender(), message.getJobId());
-        else
+        else {
+            prepareNextPasswordCrackingJob();
             sendNextTaskToWorker(sender());
+        }
+    }
+
+    private void prepareNextPasswordCrackingJob() {
+        for (PasswordCrackingJob job : getPasswordCrackingJobs()) {
+            if (!job.isStarted()) {
+                getTasks().put(job.getId(), createHintCrackingTasks(job));
+                break;
+            }
+        }
     }
 
     private void printJobStatus() {
@@ -174,7 +186,6 @@ public class Master extends AbstractLoggingActor {
         applyHints(passwordCrackingJob);
         return createTasks(
                 passwordCrackingJob,
-                new LinkedList<>(Collections.singletonList(passwordCrackingJob.getHash())),
                 passwordCrackingJob.getPasswordLength());
     }
 
@@ -219,10 +230,10 @@ public class Master extends AbstractLoggingActor {
     private final int CHUNK_SIZE = 16_384;
 
     private Queue<Worker.CompareMessage> createHintCrackingTasks(PasswordCrackingJob passwordCrackingJob) {
-        return createTasks(passwordCrackingJob, passwordCrackingJob.getHints(), passwordCrackingJob.getRemainingChars().size());
+        return createTasks(passwordCrackingJob, passwordCrackingJob.getRemainingChars().size());
     }
 
-    private Queue<Worker.CompareMessage> createTasks(PasswordCrackingJob passwordCrackingJob, LinkedList<String> hashes, int permutationLength) {
+    private Queue<Worker.CompareMessage> createTasks(PasswordCrackingJob passwordCrackingJob, int permutationLength) {
         String occurringCharacters = passwordCrackingJob.getRemainingCharsAsString();
         LinkedList<String> permutations = new LinkedList<>();
         heapPermutation(occurringCharacters.toCharArray(), permutationLength, permutations);
@@ -237,8 +248,8 @@ public class Master extends AbstractLoggingActor {
                     offset,
                     (iChunk + 1) * getCHUNK_SIZE() < totalPermutations ? getCHUNK_SIZE() : totalPermutations - offset,
                     permutationLength,
-                    occurringCharacters,
-                    hashes,
+                    null,
+                    null,
                     null, // will be updated right before sending
                     passwordCrackingJob.getId()
             ));
@@ -257,10 +268,10 @@ public class Master extends AbstractLoggingActor {
     private void sendNextTaskToWorker(ActorRef worker, String passwordCrackingJobId) {
         Worker.CompareMessage task = getTasks().get(passwordCrackingJobId).poll();
         if (task != null) {
-            task.setPermutations(new LinkedList<>(
-                    getPasswordCrackingJobMap()
-                            .get(passwordCrackingJobId).getPermutations()
-                            .subList(task.getOffset(), task.getOffset() + task.getLength())));
+            PasswordCrackingJob job = getPasswordCrackingJobMap().get(passwordCrackingJobId);
+            task.setPermutations(new LinkedList<>(job.getPermutations().subList(task.getOffset(), task.getOffset() + task.getLength())));
+            task.setOccurringCharacters(job.getRemainingCharsAsString());
+            task.setHashes(job.allHintsSolved() ? new LinkedList<>(Collections.singletonList(job.getHash())) : job.getHints());
             worker.tell(task, self());
         }
     }

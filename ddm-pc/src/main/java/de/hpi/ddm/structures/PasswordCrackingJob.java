@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 @Data
 public class PasswordCrackingJob {
 
+    private boolean started = false;
     private int passwordLength;
     private int unresolvedHintCount;
     private LinkedList<Character> remainingChars;
