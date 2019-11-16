@@ -180,7 +180,7 @@ public class Master extends AbstractLoggingActor {
         log().info("====================================");
         getTasks().forEach((id, tasks) -> {
             PasswordCrackingJob job = getPasswordCrackingJobMap().get(id);
-            log().info("<Job " + id + "> Tasks remaining: " + tasks.size() + " Hints solved: " + (job.getHints().size() - job.getUnresolvedHintCount()) + "/" +  job.getUnresolvedHintCount());
+            log().info("<Job " + id + "> Tasks remaining: " + tasks.size() + " Hints solved: " + (job.getHints().size() - job.getUnresolvedHintCount()) + "/" +  job.getHints().size());
         });
         log().info("Jobs remaining: " + getPasswordCrackingJobs().size());
         log().info("====================================");
