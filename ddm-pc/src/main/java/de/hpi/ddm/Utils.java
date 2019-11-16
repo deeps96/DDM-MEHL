@@ -4,6 +4,7 @@ import java.io.UnsupportedEncodingException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
+import java.util.stream.Collector;
 import java.util.stream.Collectors;
 
 public class Utils {
@@ -27,7 +28,7 @@ public class Utils {
     // Generating all permutations of an array using Heap's Algorithm
     // https://en.wikipedia.org/wiki/Heap's_algorithm
     // https://www.geeksforgeeks.org/heaps-algorithm-for-generating-permutations/
-    private static void heapPermutation(char[] a, int size, List<String> l) {
+    private static void heapPermutation(char[] a, int size, Collection<String> l) {
         // If size is 1, store the obtained permutation
         if (size == 1)
             l.add(new String(a));
@@ -52,7 +53,7 @@ public class Utils {
     }
 
     //https://hmkcode.com/calculate-find-all-possible-combinations-of-an-array-using-java/
-    private static void combinationWithoutRepetition(char[] elements, int k, List<String> combinations){
+    private static void combinationWithoutRepetition(char[] elements, int k, Collection<String> combinations){
 
         // get the length of the array
         // e.g. for {'A','B','C','D'} => N = 4
@@ -127,7 +128,7 @@ public class Utils {
         }
     }
 
-    public static void permutation(char[] A, int k, List<String> permutations) {
+    public static void permutation(char[] A, int k, Collection<String> permutations) {
         List<String> combinations = new LinkedList<>();
         if (k <= A.length) {
             combinationWithoutRepetition(A, k, combinations);
@@ -136,15 +137,10 @@ public class Utils {
         } else {
             List<Character> out = new ArrayList<>();
             combinationWithRepetition(A, out, k, 0, A.length, combinations);
+            LinkedHashSet<String> permutationsSet = new LinkedHashSet<>();
             combinations.forEach(combination ->
-                    heapPermutation(combination.toCharArray(), k, permutations));
-            removeDuplicates(permutations);
+                    heapPermutation(combination.toCharArray(), k, permutationsSet));
+            permutations.addAll(permutationsSet);
         }
-    }
-
-    private static void removeDuplicates(List<String> list) {
-        Set<String> set = new LinkedHashSet<>(list);
-        list.clear();
-        list.addAll(set);
     }
 }
