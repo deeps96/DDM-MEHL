@@ -234,10 +234,10 @@ public class Master extends AbstractLoggingActor {
 
     private Queue<Worker.CompareMessage> createTasks(PasswordCrackingJob passwordCrackingJob) {
         String occurringCharacters = passwordCrackingJob.getRemainingCharsAsString();
-        HashSet<String> permutations = new HashSet<>();
+        LinkedList<String> permutations = new LinkedList<>();
         permutation(occurringCharacters.toCharArray(), passwordCrackingJob.getPasswordLength(), permutations);
 
-        passwordCrackingJob.setPermutations(new LinkedList<>(permutations));
+        passwordCrackingJob.setPermutations(permutations);
         int totalPermutations = permutations.size();
 
         int chunkCount = (int) Math.ceil((double) totalPermutations / getCHUNK_SIZE());

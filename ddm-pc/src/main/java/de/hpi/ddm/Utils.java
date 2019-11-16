@@ -27,7 +27,7 @@ public class Utils {
     // Generating all permutations of an array using Heap's Algorithm
     // https://en.wikipedia.org/wiki/Heap's_algorithm
     // https://www.geeksforgeeks.org/heaps-algorithm-for-generating-permutations/
-    private static void heapPermutation(char[] a, int size, Set<String> l) {
+    private static void heapPermutation(char[] a, int size, List<String> l) {
         // If size is 1, store the obtained permutation
         if (size == 1)
             l.add(new String(a));
@@ -52,7 +52,7 @@ public class Utils {
     }
 
     //https://hmkcode.com/calculate-find-all-possible-combinations-of-an-array-using-java/
-    private static void combinationWithoutRepetition(char[] elements, int k, Set<String> combinations){
+    private static void combinationWithoutRepetition(char[] elements, int k, List<String> combinations){
 
         // get the length of the array
         // e.g. for {'A','B','C','D'} => N = 4
@@ -102,7 +102,7 @@ public class Utils {
     }
 
     // https://www.techiedelight.com/find-distinct-combinations-given-length-repetition-allowed/
-    private static void combinationWithRepetition(char[] A, List<Character> out, int k, int i, int n, Set<String> combinations)
+    private static void combinationWithRepetition(char[] A, List<Character> out, int k, int i, int n, List<String> combinations)
     {
         // base case: if combination size is k, print it
         if (out.size() == k)
@@ -127,15 +127,24 @@ public class Utils {
         }
     }
 
-    public static void permutation(char[] A, int k, Set<String> permutations) {
-        Set<String> combinations = new HashSet<>();
+    public static void permutation(char[] A, int k, List<String> permutations) {
+        List<String> combinations = new LinkedList<>();
         if (k <= A.length) {
             combinationWithoutRepetition(A, k, combinations);
+            combinations.forEach(combination ->
+                    heapPermutation(combination.toCharArray(), k, permutations));
         } else {
             List<Character> out = new ArrayList<>();
             combinationWithRepetition(A, out, k, 0, A.length, combinations);
+            combinations.forEach(combination ->
+                    heapPermutation(combination.toCharArray(), k, permutations));
+            removeDuplicates(permutations);
         }
-        combinations.forEach(combination ->
-                heapPermutation(combination.toCharArray(), k, permutations));
+    }
+
+    private static void removeDuplicates(List<String> list) {
+        Set<String> set = new LinkedHashSet<>(list);
+        list.clear();
+        list.addAll(set);
     }
 }
