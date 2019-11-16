@@ -2,6 +2,7 @@ package de.hpi.ddm.actors;
 
 import akka.actor.*;
 import de.hpi.ddm.structures.PasswordCrackingJob;
+import it.unimi.dsi.fastutil.Hash;
 import lombok.*;
 import org.apache.commons.lang3.tuple.Pair;
 
@@ -131,7 +132,7 @@ public class Master extends AbstractLoggingActor {
             getPasswordCrackingJobMap().put(passwordCrackingJob.getId(), passwordCrackingJob);
         }
 
-        getWorkers().forEach(this::sendNextTaskToWorker); // we might serve tasks to already busy workers here
+        getWorkers().forEach(this::sendNextTaskToWorker); // we might serve tasks to already busy workers here, since we assign task on registration
     }
 
     private void handle(CompareResult message) {
@@ -233,10 +234,10 @@ public class Master extends AbstractLoggingActor {
 
     private Queue<Worker.CompareMessage> createTasks(PasswordCrackingJob passwordCrackingJob) {
         String occurringCharacters = passwordCrackingJob.getRemainingCharsAsString();
-        LinkedList<String> permutations = new LinkedList<>();
+        HashSet<String> permutations = new HashSet<>();
         permutation(occurringCharacters.toCharArray(), passwordCrackingJob.getPasswordLength(), permutations);
 
-        passwordCrackingJob.setPermutations(permutations);
+        passwordCrackingJob.setPermutations(new LinkedList<>(permutations));
         int totalPermutations = permutations.size();
 
         int chunkCount = (int) Math.ceil((double) totalPermutations / getCHUNK_SIZE());
