@@ -132,11 +132,11 @@ public class Master extends AbstractLoggingActor {
 
         prepareNextPasswordCrackingJob();
 
-        printJobStatus();
         getWorkers().forEach(this::sendNextTaskToWorker);
     }
 
     private void handle(CompareResult message) {
+        System.out.print(".");
         if (message.hasResult() && getPasswordCrackingJobMap().containsKey(message.getJobId())) {
             PasswordCrackingJob job = getPasswordCrackingJobMap().get(message.getJobId());
             if (job.hasUnresolvedHints()) {
@@ -146,7 +146,7 @@ public class Master extends AbstractLoggingActor {
                     getTasks().put(job.getId(), createTasks(job));
                 }
                 printJobStatus();
-            } else {
+            } else if (message.getResolvedHashes().get(0).getHash().equals(job.getHash())) {
                 job.setCrackedPassword(message.getResolvedHashes().get(0).getPlain());
                 log().info("<Job " + job.getId() + "> PASSWORD " + job.getCrackedPassword());
                 getTasks().remove(job.getId());
@@ -172,6 +172,7 @@ public class Master extends AbstractLoggingActor {
                 break;
             }
         }
+        printJobStatus();
     }
 
     private void printJobStatus() {
