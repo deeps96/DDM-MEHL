@@ -114,9 +114,7 @@ public class Master extends AbstractLoggingActor {
 
     private void handle(StartMessage message) {
         this.startTime = System.currentTimeMillis();
-        getPasswordCrackingJobs().clear();
-
-        getReader().tell(new Reader.ReadMessage(), self());
+//        getReader().tell(new Reader.ReadMessage(), self());
     }
 
     private void handle(BatchMessage message) {
@@ -180,8 +178,11 @@ public class Master extends AbstractLoggingActor {
     private void printJobStatus() {
         log().info("");
         log().info("====================================");
-        getTasks().forEach((id, tasks) ->
-                log().info("<Job " + id + "> Tasks remaining: " + tasks.size() + " Hints unresolved: " + getPasswordCrackingJobMap().get(id).getUnresolvedHintCount()));
+        getTasks().forEach((id, tasks) -> {
+            PasswordCrackingJob job = getPasswordCrackingJobMap().get(id);
+            log().info("<Job " + id + "> Tasks remaining: " + tasks.size() + " Hints solved: " + (job.getHints().size() - job.getUnresolvedHintCount()) + "/" +  job.getUnresolvedHintCount());
+        });
+        log().info("Jobs remaining: " + getPasswordCrackingJobs().size());
         log().info("====================================");
     }
 
