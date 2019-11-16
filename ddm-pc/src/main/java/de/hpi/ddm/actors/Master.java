@@ -80,6 +80,8 @@ public class Master extends AbstractLoggingActor {
 
     private long startTime;
 
+    @Setter(AccessLevel.PRIVATE)
+    private boolean isFetchingNextBatch = false;
     private final HashMap<Pair<String, Integer>, List<String>> hashStore = new HashMap<>();
     private final HashMap<String, PasswordCrackingJob> passwordCrackingJobMap = new HashMap<>();
     private final HashMap<String, Queue<Worker.CompareMessage>> tasks = new HashMap<>();
@@ -124,15 +126,14 @@ public class Master extends AbstractLoggingActor {
             return;
         }
 
+        setFetchingNextBatch(false);
         for (String[] line : message.getLines()) {
             PasswordCrackingJob passwordCrackingJob = parsePasswordCrackingJob(line);
             getPasswordCrackingJobs().add(passwordCrackingJob);
             getPasswordCrackingJobMap().put(passwordCrackingJob.getId(), passwordCrackingJob);
         }
 
-        prepareNextPasswordCrackingJob();
-
-        getWorkers().forEach(this::sendNextTaskToWorker);
+        getWorkers().forEach(this::sendNextTaskToWorker); // we might serve tasks to already busy workers here
     }
 
     private void handle(CompareResult message) {
@@ -155,14 +156,10 @@ public class Master extends AbstractLoggingActor {
             }
         }
 
-        if (getPasswordCrackingJobs().isEmpty())
-            getReader().tell(new Reader.ReadMessage(), self());
-        else if (getTasks().containsKey(message.getJobId()) && !getTasks().get(message.getJobId()).isEmpty()) {
+        if (getTasks().containsKey(message.getJobId()) && !getTasks().get(message.getJobId()).isEmpty())
             sendNextTaskToWorker(sender(), message.getJobId());
-        } else {
-            prepareNextPasswordCrackingJob();
+        else
             sendNextTaskToWorker(sender());
-        }
     }
 
     private void prepareNextPasswordCrackingJob() {
@@ -170,10 +167,14 @@ public class Master extends AbstractLoggingActor {
             if (!job.isStarted()) {
                 job.setStarted(true);
                 getTasks().put(job.getId(), createTasks(job));
-                break;
+                printJobStatus();
+                return;
             }
         }
-        printJobStatus();
+        if (!isFetchingNextBatch()) {
+            setFetchingNextBatch(true);
+            getReader().tell(new Reader.ReadMessage(), self());
+        }
     }
 
     private void printJobStatus() {
@@ -254,6 +255,11 @@ public class Master extends AbstractLoggingActor {
     }
 
     private void sendNextTaskToWorker(ActorRef worker) {
+        if (getTasks().values().stream()
+                .mapToLong(Queue::size)
+                .sum() == 0L)
+            prepareNextPasswordCrackingJob();
+
         for (PasswordCrackingJob job : getPasswordCrackingJobs())
             if (getTasks().get(job.getId()).peek() != null) {
                 sendNextTaskToWorker(worker, job.getId());
