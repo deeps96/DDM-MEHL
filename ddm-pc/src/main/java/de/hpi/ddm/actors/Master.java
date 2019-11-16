@@ -168,6 +168,7 @@ public class Master extends AbstractLoggingActor {
     private void prepareNextPasswordCrackingJob() {
         for (PasswordCrackingJob job : getPasswordCrackingJobs()) {
             if (!job.isStarted()) {
+                job.setStarted(true);
                 getTasks().put(job.getId(), createTasks(job));
                 break;
             }
@@ -266,7 +267,7 @@ public class Master extends AbstractLoggingActor {
             PasswordCrackingJob job = getPasswordCrackingJobMap().get(passwordCrackingJobId);
             task.setPermutations(new LinkedList<>(job.getPermutations().subList(task.getOffset(), task.getOffset() + task.getLength())));
             task.setOccurringCharacters(job.getRemainingCharsAsString());
-            task.setHashes(job.allHintsSolved() ? new LinkedList<>(Collections.singletonList(job.getHash())) : job.getHints());
+            task.setHashes(new LinkedList<>(job.allHintsSolved() ? Collections.singletonList(job.getHash()) : job.getHints()));
             worker.tell(task, self());
         }
     }
