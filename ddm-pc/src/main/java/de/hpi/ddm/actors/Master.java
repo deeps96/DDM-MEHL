@@ -241,6 +241,20 @@ public class Master extends AbstractLoggingActor {
 
     private final int CHUNK_SIZE = 16_384;
 
+    /*
+
+        Pruning formula:
+
+        - a) num permutations of pw w/ remainingchars
+        - b) num permutations per hint
+        - c) num unsolved hints
+
+        need: if a) < b) * c)
+
+        => pwLen ^ remChars < (occChars - 1)! * numUnolvedHints
+
+     */
+
     private Queue<Worker.CompareMessage> createTasks(PasswordCrackingJob passwordCrackingJob) {
         String occurringCharacters = passwordCrackingJob.getRemainingCharsAsString();
         LinkedList<String> permutations = new LinkedList<>();
