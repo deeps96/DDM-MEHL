@@ -20,7 +20,7 @@ public class PasswordCrackingJob {
     private String crackedPassword = null;
     private String hash;
     private String id;
-    private long numberOfPermutationsPerHint;
+    private int numberOfPermutationsPerHint;
 
     public PasswordCrackingJob(UUID id, String occurringCharacters, String hash, LinkedList<String> hints, int passwordLength) {
         setId(id.toString());
@@ -43,8 +43,6 @@ public class PasswordCrackingJob {
     }
 
     public boolean hasUnresolvedHints() { return getUnresolvedHintCount() > 0; }
-
-    public boolean allHintsSolved() { return getUnresolvedHintCount() == 0; }
 
     public void decrementUnresolvedHintCount() { setUnresolvedHintCount(getUnresolvedHintCount() - 1); }
 

@@ -102,7 +102,7 @@ public class Utils {
     }
 
     // https://www.techiedelight.com/find-distinct-combinations-given-length-repetition-allowed/
-    private static void combinationWithRepetition(char[] A, List<Character> out, int k, int i, int n, List<String> combinations)
+    private static void combinationWithRepetition(char[] A, List<Character> out, int k, int i, int n, Collection<String> combinations)
     {
         // base case: if combination size is k, print it
         if (out.size() == k)
@@ -127,14 +127,11 @@ public class Utils {
         }
     }
 
-    public static void permutationsForPasswordCracking(char[] A, int k, Collection<String> permutations) {
-        List<String> combinations = new LinkedList<>();
+    public static PermutationGenerator permutationsForPasswordCracking(char[] A, int k) {
+        Queue<String> combinations = new LinkedList<>();
         List<Character> out = new ArrayList<>();
         combinationWithRepetition(A, out, k, 0, A.length, combinations);
-        LinkedHashSet<String> permutationsSet = new LinkedHashSet<>();
-        combinations.forEach(combination ->
-                heapPermutation(combination.toCharArray(), k, permutationsSet));
-        permutations.addAll(permutationsSet);
+        return new PermutationGenerator(combinations);
     }
 
     public static PermutationGenerator permutationsForHintCracking(char[] A) {

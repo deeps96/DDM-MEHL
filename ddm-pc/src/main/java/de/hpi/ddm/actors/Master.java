@@ -246,28 +246,12 @@ public class Master extends AbstractLoggingActor {
 
     private Queue<Worker.CompareMessage> createPasswordCrackingTasks(PasswordCrackingJob passwordCrackingJob) {
         String occurringCharacters = passwordCrackingJob.getRemainingCharsAsString();
-        LinkedList<String> permutations = new LinkedList<>();
+        PermutationGenerator generator = permutationsForPasswordCracking(occurringCharacters.toCharArray(), passwordCrackingJob.getPasswordLength());
 
-        permutationsForPasswordCracking(occurringCharacters.toCharArray(), passwordCrackingJob.getPasswordLength(), permutations);
+        passwordCrackingJob.setPermutationGenerator(generator);
+        int totalPermutations = (int) Math.pow(passwordCrackingJob.getRemainingChars().size(), passwordCrackingJob.getPasswordLength());
 
-        passwordCrackingJob.setPermutations(permutations);
-        int totalPermutations = permutations.size();
-
-        int chunkCount = (int) Math.ceil((double) totalPermutations / getCHUNK_SIZE());
-        Queue<Worker.CompareMessage> passwordCrackingTasks = new LinkedList<>();
-
-        for (int iChunk = 0; iChunk < chunkCount; iChunk++) {
-            int offset = iChunk * getCHUNK_SIZE();
-            passwordCrackingTasks.add(new Worker.CompareMessage(
-                    offset,
-                    (iChunk + 1) * getCHUNK_SIZE() < totalPermutations ? getCHUNK_SIZE() : totalPermutations - offset,
-                    null,
-                    null, // null values will be updated right before sending (done to avoid redundancy etc.)
-                    passwordCrackingJob.getId(),
-                    Worker.CompareMessage.Type.PASSWORD
-            ));
-        }
-        return passwordCrackingTasks;
+        return createTasks(passwordCrackingJob, totalPermutations, Worker.CompareMessage.Type.PASSWORD);
     }
 
     private Queue<Worker.CompareMessage> createHintCrackingTasks(PasswordCrackingJob passwordCrackingJob) {
@@ -277,21 +261,25 @@ public class Master extends AbstractLoggingActor {
         passwordCrackingJob.setPermutationGenerator(generator);
         int totalPermutations = fact(occurringCharacters.toCharArray().length);
 
+        return createTasks(passwordCrackingJob, totalPermutations, Worker.CompareMessage.Type.HINT);
+    }
+
+    private Queue<Worker.CompareMessage> createTasks(PasswordCrackingJob passwordCrackingJob, int totalPermutations, Worker.CompareMessage.Type type) {
         int chunkCount = (int) Math.ceil((double) totalPermutations / getCHUNK_SIZE());
-        Queue<Worker.CompareMessage> hintCrackingTasks = new LinkedList<>();
+        Queue<Worker.CompareMessage> tasks = new LinkedList<>();
 
         for (int iChunk = 0; iChunk < chunkCount; iChunk++) {
             int offset = iChunk * getCHUNK_SIZE();
-            hintCrackingTasks.add(new Worker.CompareMessage(
+            tasks.add(new Worker.CompareMessage(
                     offset,
                     (iChunk + 1) * getCHUNK_SIZE() < totalPermutations ? getCHUNK_SIZE() : totalPermutations - offset,
                     null,
                     null, // null values will be updated right before sending (done to avoid redundancy etc.)
                     passwordCrackingJob.getId(),
-                    Worker.CompareMessage.Type.HINT
+                    type
             ));
         }
-        return hintCrackingTasks;
+        return tasks;
     }
 
     private void sendNextTaskToWorker(ActorRef worker) {
@@ -314,21 +302,10 @@ public class Master extends AbstractLoggingActor {
 
         if (task != null) {
             PasswordCrackingJob job = getPasswordCrackingJobMap().get(passwordCrackingJobId);
-            if (task.getJobType() == Worker.CompareMessage.Type.PASSWORD) sendPasswordTaskToWorker(worker, task, job);
-            else if (task.getJobType() == Worker.CompareMessage.Type.HINT) sendHintTaskToWorker(worker, task, job);
+            task.setPermutations(new LinkedList<>(job.getPermutationGenerator().getNextBatch(getCHUNK_SIZE())));
+            task.setHashes(new LinkedList<>(task.getJobType().equals(Worker.CompareMessage.Type.HINT) ? job.getHints() : Collections.singletonList(job.getHash())));
+            worker.tell(task, self());
         }
-    }
-
-    private void sendHintTaskToWorker(ActorRef worker, Worker.CompareMessage task, PasswordCrackingJob job) {
-        task.setPermutations(new LinkedList<>(job.getPermutationGenerator().getNextBatch(getCHUNK_SIZE())));
-        task.setHashes(new LinkedList<>(job.getHints()));
-        worker.tell(task, self());
-    }
-
-    private void sendPasswordTaskToWorker(ActorRef worker, Worker.CompareMessage task, PasswordCrackingJob job) {
-        task.setPermutations(new LinkedList<>(job.getPermutations().subList(task.getOffset(), task.getOffset() + task.getLength())));
-        task.setHashes(new LinkedList<>(Collections.singletonList(job.getHash())));
-        worker.tell(task, self());
     }
 
     private void handle(RegistrationMessage message) {

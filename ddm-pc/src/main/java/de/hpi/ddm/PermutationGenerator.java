@@ -19,6 +19,7 @@ public class PermutationGenerator{
     private int permutationCount = 1;
     private int[] currentPermutation;
     private Queue<String> combinations;
+    private String currentCombination;
 
     public PermutationGenerator(Queue<String> combinations) {
         this.combinations = combinations;
@@ -125,17 +126,13 @@ public class PermutationGenerator{
         }
     }
 
-    public List<String> getNextBatch(int chunkSize) {
-        List<String> permutations = new ArrayList<>(chunkSize);
+    public Collection<String> getNextBatch(int chunkSize) {
+        HashSet<String> permutations = new HashSet<>(chunkSize);
 
         while(permutations.size() < chunkSize && (!combinations.isEmpty() || permutationCount < currentTotalPermutations)) {
             for (; permutationCount < Math.min(permutationCount + chunkSize - permutations.size(), currentTotalPermutations); permutationCount++) {
                 calculateOnePermutation(currentPermutation, dir, currentPermutation.length);
-                char[] permutationChars = new char[currentPermutation.length];
-                for(int i = 0; i < currentPermutation.length; i++) {
-                    permutationChars[i] = (char) currentPermutation[i];
-                }
-                permutations.add(new String(permutationChars));
+                permutations.add(map(currentPermutation));
             }
 
             if(currentTotalPermutations == permutationCount) {
@@ -151,10 +148,23 @@ public class PermutationGenerator{
             return;
         }
 
-        currentPermutation = combinations.poll().chars().toArray();
+        currentCombination = combinations.poll();
+        if (currentCombination == null) return;
+        currentPermutation = new int[currentCombination.length()];
+        dir = new boolean[currentPermutation.length];
+        for (int iChar = 0; iChar < currentPermutation.length; iChar++) {
+            currentPermutation[iChar] = iChar + 1;
+            dir[iChar] = RIGHT_TO_LEFT;
+        }
         currentTotalPermutations = fact(currentPermutation.length);
         permutationCount = 0;
-        dir = new boolean[Arrays.stream(currentPermutation).max().getAsInt()];
+    }
+
+    private String map(int[] order) {
+        char[] mappedChars = new char[order.length];
+        for (int iChar = 0; iChar < mappedChars.length; iChar++)
+            mappedChars[iChar] = currentCombination.charAt(order[iChar] - 1);
+        return new String(mappedChars);
     }
 
     // To end the algorithm
@@ -174,8 +184,8 @@ public class PermutationGenerator{
 
     public static void main(String[] args) {
         PermutationGenerator generator = new PermutationGenerator(new LinkedList<>(Arrays.asList("1234", "abcd")));
-        for(int i = 0; i < 2; i++) {
-            List<String> perms = generator.getNextBatch(10);
+        for(int i = 0; i < 4; i++) {
+            Collection<String> perms = generator.getNextBatch(10);
             System.out.println(perms);
         }
     }
