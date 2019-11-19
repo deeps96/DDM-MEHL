@@ -182,13 +182,6 @@ public class PermutationGenerator{
         return res;
     }
 
-    public static void main(String[] args) {
-        PermutationGenerator generator = new PermutationGenerator(new LinkedList<>(Arrays.asList("1234", "abcd")));
-        for(int i = 0; i < 4; i++) {
-            Collection<String> perms = generator.getNextBatch(10);
-            System.out.println(perms);
-        }
-    }
 }
 
 // This code is contributed by Sagar Shukla

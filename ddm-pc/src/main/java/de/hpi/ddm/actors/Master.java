@@ -3,7 +3,6 @@ package de.hpi.ddm.actors;
 import akka.actor.*;
 import de.hpi.ddm.PermutationGenerator;
 import de.hpi.ddm.structures.PasswordCrackingJob;
-import it.unimi.dsi.fastutil.Hash;
 import lombok.*;
 import org.apache.commons.lang3.tuple.Pair;
 
@@ -150,9 +149,9 @@ public class Master extends AbstractLoggingActor {
             if (job.hasUnresolvedHints()) {
                 replaceHintHashes(job, message.getResolvedHashes());
 
-                if (job.readyToCrackPassword()) {
+                if (job.allHintsSolved()) {
+                    applyHints(job);
                     getTasks().put(job.getId(), createPasswordCrackingTasks(job));
-                    job.setUnresolvedHintCount(0);
                 }
 
                 printJobStatus();
@@ -205,26 +204,25 @@ public class Master extends AbstractLoggingActor {
         }
     }
 
-    private void replaceHintHashes(PasswordCrackingJob job, List<CompareResult.Result> resolvedHashes) {
+    private void applyHints(PasswordCrackingJob passwordCrackingJob) {
         Set<Character> missingCharacters = new HashSet<>();
+        passwordCrackingJob.getHints().forEach(hint -> missingCharacters.addAll(
+                passwordCrackingJob.getRemainingChars().stream()
+                        .filter(c -> hint.indexOf(c) == -1)
+                        .collect(Collectors.toSet())));
+        passwordCrackingJob.getRemainingChars().removeAll(missingCharacters);
+    }
 
+    private void replaceHintHashes(PasswordCrackingJob job, List<CompareResult.Result> resolvedHashes) {
         for (int iHint = 0; iHint < job.getHints().size(); iHint++) {
             for (CompareResult.Result result : resolvedHashes) {
                 if (job.getHints().get(iHint).equals(result.getHash())) {
                     job.getHints().set(iHint, result.getPlain());
                     job.decrementUnresolvedHintCount();
-
-                    missingCharacters.addAll(
-                            job.getRemainingChars().stream()
-                                    .filter(c -> result.getPlain().indexOf(c) == -1)
-                                    .collect(Collectors.toSet()));
-
                     break;
                 }
             }
         }
-
-        job.getRemainingChars().removeAll(missingCharacters);
     }
 
     private final int CSV_PASSWORD_CHARS_COLUMN_INDEX = 2;
@@ -246,10 +244,10 @@ public class Master extends AbstractLoggingActor {
 
     private Queue<Worker.CompareMessage> createPasswordCrackingTasks(PasswordCrackingJob passwordCrackingJob) {
         String occurringCharacters = passwordCrackingJob.getRemainingCharsAsString();
-        PermutationGenerator generator = permutationsForPasswordCracking(occurringCharacters.toCharArray(), passwordCrackingJob.getPasswordLength());
+        Pair<PermutationGenerator, Integer> permutations = permutationsForPasswordCracking(occurringCharacters.toCharArray(), passwordCrackingJob.getPasswordLength());
 
-        passwordCrackingJob.setPermutationGenerator(generator);
-        int totalPermutations = (int) Math.pow(passwordCrackingJob.getRemainingChars().size(), passwordCrackingJob.getPasswordLength());
+        passwordCrackingJob.setPermutationGenerator(permutations.getLeft());
+        int totalPermutations = permutations.getRight() * fact(passwordCrackingJob.getPasswordLength());
 
         return createTasks(passwordCrackingJob, totalPermutations, Worker.CompareMessage.Type.PASSWORD);
     }

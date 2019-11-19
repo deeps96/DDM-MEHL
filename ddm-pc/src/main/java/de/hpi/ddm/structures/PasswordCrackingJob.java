@@ -20,7 +20,6 @@ public class PasswordCrackingJob {
     private String crackedPassword = null;
     private String hash;
     private String id;
-    private int numberOfPermutationsPerHint;
 
     public PasswordCrackingJob(UUID id, String occurringCharacters, String hash, LinkedList<String> hints, int passwordLength) {
         setId(id.toString());
@@ -32,7 +31,6 @@ public class PasswordCrackingJob {
                 .collect(Collectors.toCollection(LinkedList::new)));
         setHints(hints);
         setPasswordLength(passwordLength);
-        setNumberOfPermutationsPerHint(PermutationGenerator.fact(occurringCharacters.length() - 1));
     }
 
     public String getRemainingCharsAsString() {
@@ -44,18 +42,9 @@ public class PasswordCrackingJob {
 
     public boolean hasUnresolvedHints() { return getUnresolvedHintCount() > 0; }
 
+    public boolean allHintsSolved() { return getUnresolvedHintCount() == 0; }
+
     public void decrementUnresolvedHintCount() { setUnresolvedHintCount(getUnresolvedHintCount() - 1); }
 
     public boolean isSolved() { return getCrackedPassword() != null; }
-
-    public boolean readyToCrackPassword() {
-        if(getUnresolvedHintCount() == 0) {
-            return true;
-        }
-
-        long numberOfPasswordCombinations = (long) Math.pow(getRemainingChars().size(), getPasswordLength());
-        long numberOfUnsolvedHintCombinations = getUnresolvedHintCount() * getNumberOfPermutationsPerHint();
-
-        return numberOfPasswordCombinations <= numberOfUnsolvedHintCombinations;
-    }
 }
