@@ -150,9 +150,9 @@ public class Master extends AbstractLoggingActor {
             if (job.hasUnresolvedHints()) {
                 replaceHintHashes(job, message.getResolvedHashes());
 
-                if (job.allHintsSolved()) {
-                    applyHints(job);
+                if (job.readyToCrackPassword()) {
                     getTasks().put(job.getId(), createPasswordCrackingTasks(job));
+                    job.setUnresolvedHintCount(0);
                 }
 
                 printJobStatus();
@@ -205,25 +205,26 @@ public class Master extends AbstractLoggingActor {
         }
     }
 
-    private void applyHints(PasswordCrackingJob passwordCrackingJob) {
-        Set<Character> missingCharacters = new HashSet<>();
-        passwordCrackingJob.getHints().forEach(hint -> missingCharacters.addAll(
-                passwordCrackingJob.getRemainingChars().stream()
-                        .filter(c -> hint.indexOf(c) == -1)
-                        .collect(Collectors.toSet())));
-        passwordCrackingJob.getRemainingChars().removeAll(missingCharacters);
-    }
-
     private void replaceHintHashes(PasswordCrackingJob job, List<CompareResult.Result> resolvedHashes) {
+        Set<Character> missingCharacters = new HashSet<>();
+
         for (int iHint = 0; iHint < job.getHints().size(); iHint++) {
             for (CompareResult.Result result : resolvedHashes) {
                 if (job.getHints().get(iHint).equals(result.getHash())) {
                     job.getHints().set(iHint, result.getPlain());
                     job.decrementUnresolvedHintCount();
+
+                    missingCharacters.addAll(
+                            job.getRemainingChars().stream()
+                                    .filter(c -> result.getPlain().indexOf(c) == -1)
+                                    .collect(Collectors.toSet()));
+
                     break;
                 }
             }
         }
+
+        job.getRemainingChars().removeAll(missingCharacters);
     }
 
     private final int CSV_PASSWORD_CHARS_COLUMN_INDEX = 2;
