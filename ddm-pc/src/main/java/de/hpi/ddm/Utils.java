@@ -97,7 +97,6 @@ public class Utils {
                 r--;
                 if(r >= 0)
                     i = pointers[r]+1;
-
             }
         }
     }
