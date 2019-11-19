@@ -163,7 +163,7 @@ public class PermutationGenerator{
     // because number of
     // permutations possible
     // is just n!.
-    private int fact(int n)
+    public static int fact(int n)
     {
         int res = 1;
 

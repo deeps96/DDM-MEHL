@@ -47,12 +47,15 @@ public class Worker extends AbstractLoggingActor {
 	@Data @AllArgsConstructor @NoArgsConstructor
 	static class CompareMessage implements Serializable {
 		private static final long serialVersionUID = 3303081601659723997L;
+
+		public enum Type { HINT, PASSWORD };
+
 		private int offset;
 		private int length;
-		private String occurringCharacters;
 		private LinkedList<String> hashes;
 		private LinkedList<String> permutations;
 		private String jobId;
+		private Type jobType;
 	}
 
 	/////////////////

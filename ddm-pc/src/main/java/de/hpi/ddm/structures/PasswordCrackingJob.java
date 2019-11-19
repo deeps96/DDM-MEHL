@@ -1,5 +1,6 @@
 package de.hpi.ddm.structures;
 
+import de.hpi.ddm.PermutationGenerator;
 import lombok.Data;
 
 import java.util.LinkedList;
@@ -15,6 +16,7 @@ public class PasswordCrackingJob {
     private LinkedList<Character> remainingChars;
     private LinkedList<String> hints;
     private LinkedList<String> permutations;
+    private PermutationGenerator permutationGenerator;
     private String crackedPassword = null;
     private String hash;
     private String id;

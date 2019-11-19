@@ -127,19 +127,19 @@ public class Utils {
         }
     }
 
-    public static void permutation(char[] A, int k, Collection<String> permutations) {
+    public static void permutationsForPasswordCracking(char[] A, int k, Collection<String> permutations) {
         List<String> combinations = new LinkedList<>();
-        if (k <= A.length) {
-            combinationWithoutRepetition(A, k, combinations);
-            combinations.forEach(combination ->
-                    heapPermutation(combination.toCharArray(), k, permutations));
-        } else {
-            List<Character> out = new ArrayList<>();
-            combinationWithRepetition(A, out, k, 0, A.length, combinations);
-            LinkedHashSet<String> permutationsSet = new LinkedHashSet<>();
-            combinations.forEach(combination ->
-                    heapPermutation(combination.toCharArray(), k, permutationsSet));
-            permutations.addAll(permutationsSet);
-        }
+        List<Character> out = new ArrayList<>();
+        combinationWithRepetition(A, out, k, 0, A.length, combinations);
+        LinkedHashSet<String> permutationsSet = new LinkedHashSet<>();
+        combinations.forEach(combination ->
+                heapPermutation(combination.toCharArray(), k, permutationsSet));
+        permutations.addAll(permutationsSet);
+    }
+
+    public static PermutationGenerator permutationsForHintCracking(char[] A) {
+        Queue<String> combinations = new LinkedList<>();
+        combinationWithoutRepetition(A, A.length - 1, combinations);
+        return new PermutationGenerator(combinations);
     }
 }
