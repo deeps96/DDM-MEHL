@@ -247,7 +247,7 @@ public class Master extends AbstractLoggingActor {
         Pair<PermutationGenerator, Integer> permutations = permutationsForPasswordCracking(occurringCharacters.toCharArray(), passwordCrackingJob.getPasswordLength());
 
         passwordCrackingJob.setPermutationGenerator(permutations.getLeft());
-        int totalPermutations = permutations.getRight() * fact(passwordCrackingJob.getPasswordLength());
+        int totalPermutations = permutations.getRight() * fact(passwordCrackingJob.getPasswordLength()); // estimate
 
         return createTasks(passwordCrackingJob, totalPermutations, Worker.CompareMessage.Type.PASSWORD);
     }
@@ -301,6 +301,10 @@ public class Master extends AbstractLoggingActor {
         if (task != null) {
             PasswordCrackingJob job = getPasswordCrackingJobMap().get(passwordCrackingJobId);
             task.setPermutations(new LinkedList<>(job.getPermutationGenerator().getNextBatch(getCHUNK_SIZE())));
+            if (task.getPermutations().isEmpty()) { // no permutations left
+                getTasks().get(passwordCrackingJobId).clear();
+                sendNextTaskToWorker(worker);
+            }
             task.setHashes(new LinkedList<>(task.getJobType().equals(Worker.CompareMessage.Type.HINT) ? job.getHints() : Collections.singletonList(job.getHash())));
             worker.tell(task, self());
         }
