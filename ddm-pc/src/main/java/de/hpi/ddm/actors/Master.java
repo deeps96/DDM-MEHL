@@ -304,6 +304,7 @@ public class Master extends AbstractLoggingActor {
             if (task.getPermutations().isEmpty()) { // no permutations left
                 getTasks().get(passwordCrackingJobId).clear();
                 sendNextTaskToWorker(worker);
+                return;
             }
             task.setHashes(new LinkedList<>(task.getJobType().equals(Worker.CompareMessage.Type.HINT) ? job.getHints() : Collections.singletonList(job.getHash())));
             worker.tell(task, self());
