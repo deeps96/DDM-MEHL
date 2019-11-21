@@ -129,27 +129,23 @@ public class PermutationGenerator{
     public Collection<String> getNextBatch(int chunkSize) {
         HashSet<String> permutations = new HashSet<>(chunkSize);
 
-        while(permutations.size() < chunkSize && (!combinations.isEmpty() || permutationCount < currentTotalPermutations)) {
+        while(permutations.size() < chunkSize) {
             for (; permutationCount < Math.min(permutationCount + chunkSize - permutations.size(), currentTotalPermutations); permutationCount++) {
                 calculateOnePermutation(currentPermutation, dir, currentPermutation.length);
                 permutations.add(map(currentPermutation));
             }
 
-            if(currentTotalPermutations == permutationCount) {
-                nextCombination();
-            }
+            if(currentTotalPermutations == permutationCount && !nextCombination())
+                break;
         }
 
         return permutations;
     }
 
-    private void nextCombination() {
-        if(combinations.isEmpty()) {
-            return;
-        }
+    private boolean nextCombination() {
+        if(combinations.isEmpty()) return false;
 
         currentCombination = combinations.poll();
-        if (currentCombination == null) return;
         currentPermutation = new int[currentCombination.length()];
         dir = new boolean[currentPermutation.length];
         for (int iChar = 0; iChar < currentPermutation.length; iChar++) {
@@ -158,6 +154,7 @@ public class PermutationGenerator{
         }
         currentTotalPermutations = fact(currentPermutation.length);
         permutationCount = 0;
+        return true;
     }
 
     private String map(int[] order) {
