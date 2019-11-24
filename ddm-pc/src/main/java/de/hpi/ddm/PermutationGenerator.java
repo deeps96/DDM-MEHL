@@ -3,11 +3,14 @@ package de.hpi.ddm;
 // Java program to print all
 // permutations using Johnson
 // and Trotter algorithm.
-import scala.Char;
 
-import java.util.*;
-import java.lang.*;
-import java.util.stream.Stream;
+import org.apache.commons.lang3.tuple.Pair;
+
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Queue;
+
+import static de.hpi.ddm.Utils.permutationsForPasswordCracking;
 
 public class PermutationGenerator{
 
@@ -156,7 +159,7 @@ public class PermutationGenerator{
             currentPermutation[iChar] = iChar + 1;
             dir[iChar] = RIGHT_TO_LEFT;
         }
-        currentTotalPermutations = fact(currentPermutation.length);
+        currentTotalPermutations = (int) fact(currentPermutation.length);
         permutationCount = 0;
     }
 
@@ -173,9 +176,9 @@ public class PermutationGenerator{
     // because number of
     // permutations possible
     // is just n!.
-    public static int fact(int n)
+    public static long fact(int n)
     {
-        int res = 1;
+        long res = 1;
 
         for (int i = 1; i <= n; i++)
             res = res * i;

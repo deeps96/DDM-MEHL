@@ -21,6 +21,7 @@ public class Master extends AbstractLoggingActor {
     ////////////////////////
 
     public static final String DEFAULT_NAME = "master";
+    private static boolean DEBUG = false;
 
     public static Props props(final ActorRef reader, final ActorRef collector) {
         return Props.create(Master.class, () -> new Master(reader, collector));
@@ -141,7 +142,8 @@ public class Master extends AbstractLoggingActor {
     }
 
     private void handle(CompareResult message) {
-        System.out.print(".");
+        if(DEBUG)
+            System.out.print(".");
 
         if (message.hasResult() && getPasswordCrackingJobMap().containsKey(message.getJobId())) {
             PasswordCrackingJob job = getPasswordCrackingJobMap().get(message.getJobId());
@@ -149,15 +151,18 @@ public class Master extends AbstractLoggingActor {
             if (job.hasUnresolvedHints()) {
                 replaceHintHashes(job, message.getResolvedHashes());
 
-                if (job.allHintsSolved()) {
-                    applyHints(job);
+                if (job.readyToCrackPassword()) {
+                    getTasks().get(job.getId()).clear(); // Delete hint cracking tasks
                     getTasks().put(job.getId(), createPasswordCrackingTasks(job));
+                    job.setUnresolvedHintCount(0);
                 }
 
-                printJobStatus();
+                if(DEBUG)
+                    printJobStatus();
             } else if (message.getResolvedHashes().get(0).getHash().equals(job.getHash())) {
                 job.setCrackedPassword(message.getResolvedHashes().get(0).getPlain());
-                log().info("<Job " + job.getId() + "> PASSWORD " + job.getCrackedPassword());
+                if(DEBUG)
+                    log().info("<Job " + job.getId() + "> PASSWORD " + job.getCrackedPassword());
                 getTasks().remove(job.getId());
                 getPasswordCrackingJobMap().remove(job.getId());
                 sendSolvedPasswordsToCollector();
@@ -175,7 +180,8 @@ public class Master extends AbstractLoggingActor {
             if (!job.isStarted()) {
                 job.setStarted(true);
                 getTasks().put(job.getId(), createHintCrackingTasks(job));
-                printJobStatus();
+                if(DEBUG)
+                    printJobStatus();
                 return;
             }
         }
@@ -204,25 +210,24 @@ public class Master extends AbstractLoggingActor {
         }
     }
 
-    private void applyHints(PasswordCrackingJob passwordCrackingJob) {
-        Set<Character> missingCharacters = new HashSet<>();
-        passwordCrackingJob.getHints().forEach(hint -> missingCharacters.addAll(
-                passwordCrackingJob.getRemainingChars().stream()
-                        .filter(c -> hint.indexOf(c) == -1)
-                        .collect(Collectors.toSet())));
-        passwordCrackingJob.getRemainingChars().removeAll(missingCharacters);
-    }
-
     private void replaceHintHashes(PasswordCrackingJob job, List<CompareResult.Result> resolvedHashes) {
+        Set<Character> missingCharacters = new HashSet<>();
+
         for (int iHint = 0; iHint < job.getHints().size(); iHint++) {
             for (CompareResult.Result result : resolvedHashes) {
                 if (job.getHints().get(iHint).equals(result.getHash())) {
                     job.getHints().set(iHint, result.getPlain());
                     job.decrementUnresolvedHintCount();
+                    missingCharacters.addAll(
+                            job.getRemainingChars().stream()
+                                    .filter(c -> result.getPlain().indexOf(c) == -1)
+                                    .collect(Collectors.toSet()));
                     break;
                 }
             }
         }
+
+        job.getRemainingChars().removeAll(missingCharacters);
     }
 
     private final int CSV_PASSWORD_CHARS_COLUMN_INDEX = 2;
@@ -247,7 +252,7 @@ public class Master extends AbstractLoggingActor {
         Pair<PermutationGenerator, Integer> permutations = permutationsForPasswordCracking(occurringCharacters.toCharArray(), passwordCrackingJob.getPasswordLength());
 
         passwordCrackingJob.setPermutationGenerator(permutations.getLeft());
-        int totalPermutations = permutations.getRight() * fact(passwordCrackingJob.getPasswordLength()); // estimate
+        long totalPermutations = permutations.getRight() * fact(passwordCrackingJob.getPasswordLength()); // estimate
 
         return createTasks(passwordCrackingJob, totalPermutations, Worker.CompareMessage.Type.PASSWORD);
     }
@@ -257,20 +262,20 @@ public class Master extends AbstractLoggingActor {
         PermutationGenerator generator = permutationsForHintCracking(occurringCharacters.toCharArray());
 
         passwordCrackingJob.setPermutationGenerator(generator);
-        int totalPermutations = fact(occurringCharacters.toCharArray().length);
+        long totalPermutations = fact(occurringCharacters.toCharArray().length);
 
         return createTasks(passwordCrackingJob, totalPermutations, Worker.CompareMessage.Type.HINT);
     }
 
-    private Queue<Worker.CompareMessage> createTasks(PasswordCrackingJob passwordCrackingJob, int totalPermutations, Worker.CompareMessage.Type type) {
-        int chunkCount = (int) Math.ceil((double) totalPermutations / getCHUNK_SIZE());
+    private Queue<Worker.CompareMessage> createTasks(PasswordCrackingJob passwordCrackingJob, long totalPermutations, Worker.CompareMessage.Type type) {
+        long chunkCount = (int) Math.ceil((double) totalPermutations / getCHUNK_SIZE());
         Queue<Worker.CompareMessage> tasks = new LinkedList<>();
 
         for (int iChunk = 0; iChunk < chunkCount; iChunk++) {
             int offset = iChunk * getCHUNK_SIZE();
             tasks.add(new Worker.CompareMessage(
                     offset,
-                    (iChunk + 1) * getCHUNK_SIZE() < totalPermutations ? getCHUNK_SIZE() : totalPermutations - offset,
+                    (iChunk + 1) * getCHUNK_SIZE() < totalPermutations ? getCHUNK_SIZE() : (int) (totalPermutations - offset),
                     null,
                     null, // null values will be updated right before sending (done to avoid redundancy etc.)
                     passwordCrackingJob.getId(),

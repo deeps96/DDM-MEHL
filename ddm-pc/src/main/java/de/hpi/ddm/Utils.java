@@ -6,7 +6,6 @@ import java.io.UnsupportedEncodingException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
-import java.util.stream.Collector;
 import java.util.stream.Collectors;
 
 public class Utils {
@@ -104,6 +103,7 @@ public class Utils {
     }
 
     // https://www.techiedelight.com/find-distinct-combinations-given-length-repetition-allowed/
+
     private static void combinationWithRepetition(char[] A, List<Character> out, int k, int i, int n, Collection<String> combinations)
     {
         // base case: if combination size is k, print it
