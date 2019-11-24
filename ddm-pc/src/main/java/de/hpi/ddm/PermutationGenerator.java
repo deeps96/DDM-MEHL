@@ -4,19 +4,20 @@ package de.hpi.ddm;
 // permutations using Johnson
 // and Trotter algorithm.
 
-import org.apache.commons.lang3.tuple.Pair;
+
+import lombok.*;
 
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Queue;
-
-import static de.hpi.ddm.Utils.permutationsForPasswordCracking;
 
 public class PermutationGenerator{
 
     private final static boolean LEFT_TO_RIGHT = true;
     private final static boolean RIGHT_TO_LEFT = false;
 
+    @Getter @Setter(AccessLevel.PRIVATE)
+    private boolean done;
     private boolean[] dir;
     private int currentTotalPermutations;
     private int permutationCount = 1;
@@ -146,7 +147,10 @@ public class PermutationGenerator{
     }
 
     private boolean nextCombination() {
-        if(combinations.isEmpty()) return false;
+        if(combinations.isEmpty()) {
+            setDone(true);
+            return false;
+        }
 
         currentCombination = combinations.poll();
         currentPermutation = new int[currentCombination.length()];

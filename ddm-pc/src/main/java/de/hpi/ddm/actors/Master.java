@@ -4,13 +4,11 @@ import akka.actor.*;
 import de.hpi.ddm.PermutationGenerator;
 import de.hpi.ddm.structures.PasswordCrackingJob;
 import lombok.*;
-import org.apache.commons.lang3.tuple.Pair;
 
 import java.io.Serializable;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static de.hpi.ddm.PermutationGenerator.fact;
 import static de.hpi.ddm.Utils.*;
 
 @Getter(AccessLevel.PRIVATE)
@@ -85,9 +83,7 @@ public class Master extends AbstractLoggingActor {
 
     @Setter(AccessLevel.PRIVATE)
     private boolean isFetchingNextBatch = false;
-    private final HashMap<Pair<String, Integer>, List<String>> hashStore = new HashMap<>();
     private final HashMap<String, PasswordCrackingJob> passwordCrackingJobMap = new HashMap<>();
-    private final HashMap<String, Queue<Worker.CompareMessage>> tasks = new HashMap<>();
     private final Queue<PasswordCrackingJob> passwordCrackingJobs = new LinkedList<>();
 
     /////////////////////
@@ -152,9 +148,7 @@ public class Master extends AbstractLoggingActor {
                 replaceHintHashes(job, message.getResolvedHashes());
 
                 if (job.readyToCrackPassword()) {
-                    getTasks().get(job.getId()).clear(); // Delete hint cracking tasks
-                    getTasks().put(job.getId(), createPasswordCrackingTasks(job));
-                    job.setUnresolvedHintCount(0);
+                    createPasswordCrackingTasks(job);
                 }
 
                 if(DEBUG)
@@ -163,13 +157,13 @@ public class Master extends AbstractLoggingActor {
                 job.setCrackedPassword(message.getResolvedHashes().get(0).getPlain());
                 if(DEBUG)
                     log().info("<Job " + job.getId() + "> PASSWORD " + job.getCrackedPassword());
-                getTasks().remove(job.getId());
                 getPasswordCrackingJobMap().remove(job.getId());
                 sendSolvedPasswordsToCollector();
             }
         }
 
-        if (getTasks().containsKey(message.getJobId()) && !getTasks().get(message.getJobId()).isEmpty())
+        if (getPasswordCrackingJobMap().containsKey(message.getJobId()) &&
+                !getPasswordCrackingJobMap().get(message.getJobId()).getPermutationGenerator().isDone())
             sendNextTaskToWorker(sender(), message.getJobId());
         else
             sendNextTaskToWorker(sender());
@@ -179,7 +173,7 @@ public class Master extends AbstractLoggingActor {
         for (PasswordCrackingJob job : getPasswordCrackingJobs()) {
             if (!job.isStarted()) {
                 job.setStarted(true);
-                getTasks().put(job.getId(), createHintCrackingTasks(job));
+                createHintCrackingTasks(job);
                 if(DEBUG)
                     printJobStatus();
                 return;
@@ -195,9 +189,9 @@ public class Master extends AbstractLoggingActor {
     private void printJobStatus() {
         log().info("");
         log().info("====================================");
-        getTasks().forEach((id, tasks) -> {
-            PasswordCrackingJob job = getPasswordCrackingJobMap().get(id);
-            log().info("<Job " + id + "> Tasks remaining: " + tasks.size() + " Hints solved: " + (job.getHints().size() - job.getUnresolvedHintCount()) + "/" +  job.getHints().size());
+        getPasswordCrackingJobMap().forEach((id, job) -> {
+            if (job.isStarted() && !job.isSolved())
+                log().info("<Job " + id + "> Ready to crack password: " + job.readyToCrackPassword() + " Hints solved: " + (job.getHints().size() - job.getUnresolvedHintCount()) + "/" +  job.getHints().size());
         });
         log().info("Jobs remaining: " + getPasswordCrackingJobs().size());
         log().info("====================================");
@@ -247,72 +241,52 @@ public class Master extends AbstractLoggingActor {
 
     private final int CHUNK_SIZE = 16_384;
 
-    private Queue<Worker.CompareMessage> createPasswordCrackingTasks(PasswordCrackingJob passwordCrackingJob) {
+    private void createPasswordCrackingTasks(PasswordCrackingJob passwordCrackingJob) {
         String occurringCharacters = passwordCrackingJob.getRemainingCharsAsString();
-        Pair<PermutationGenerator, Integer> permutations = permutationsForPasswordCracking(occurringCharacters.toCharArray(), passwordCrackingJob.getPasswordLength());
+        PermutationGenerator permutationGenerator = permutationsForPasswordCracking(occurringCharacters.toCharArray(), passwordCrackingJob.getPasswordLength());
 
-        passwordCrackingJob.setPermutationGenerator(permutations.getLeft());
-        long totalPermutations = permutations.getRight() * fact(passwordCrackingJob.getPasswordLength()); // estimate
-
-        return createTasks(passwordCrackingJob, totalPermutations, Worker.CompareMessage.Type.PASSWORD);
+        passwordCrackingJob.setPermutationGenerator(permutationGenerator);
     }
 
-    private Queue<Worker.CompareMessage> createHintCrackingTasks(PasswordCrackingJob passwordCrackingJob) {
+    private void createHintCrackingTasks(PasswordCrackingJob passwordCrackingJob) {
         String occurringCharacters = passwordCrackingJob.getRemainingCharsAsString();
         PermutationGenerator generator = permutationsForHintCracking(occurringCharacters.toCharArray());
-
         passwordCrackingJob.setPermutationGenerator(generator);
-        long totalPermutations = fact(occurringCharacters.toCharArray().length);
-
-        return createTasks(passwordCrackingJob, totalPermutations, Worker.CompareMessage.Type.HINT);
-    }
-
-    private Queue<Worker.CompareMessage> createTasks(PasswordCrackingJob passwordCrackingJob, long totalPermutations, Worker.CompareMessage.Type type) {
-        long chunkCount = (int) Math.ceil((double) totalPermutations / getCHUNK_SIZE());
-        Queue<Worker.CompareMessage> tasks = new LinkedList<>();
-
-        for (int iChunk = 0; iChunk < chunkCount; iChunk++) {
-            int offset = iChunk * getCHUNK_SIZE();
-            tasks.add(new Worker.CompareMessage(
-                    offset,
-                    (iChunk + 1) * getCHUNK_SIZE() < totalPermutations ? getCHUNK_SIZE() : (int) (totalPermutations - offset),
-                    null,
-                    null, // null values will be updated right before sending (done to avoid redundancy etc.)
-                    passwordCrackingJob.getId(),
-                    type
-            ));
-        }
-        return tasks;
     }
 
     private void sendNextTaskToWorker(ActorRef worker) {
-        if (getTasks().values().stream()
-                .mapToLong(Queue::size)
-                .sum() == 0L) {
+        PasswordCrackingJob runningJob = getRunningPasswordCrackingJob();
+        if (runningJob == null) {
             prepareNextPasswordCrackingJob();
+            runningJob = getRunningPasswordCrackingJob();
         }
 
-        for (PasswordCrackingJob job : getPasswordCrackingJobs()) {
-            if (getTasks().get(job.getId()).peek() != null) {
-                sendNextTaskToWorker(worker, job.getId());
-                return;
-            }
+        if (runningJob != null) {
+            sendNextTaskToWorker(worker, runningJob.getId());
         }
     }
 
-    private void sendNextTaskToWorker(ActorRef worker, String passwordCrackingJobId) {
-        Worker.CompareMessage task = getTasks().get(passwordCrackingJobId).poll();
+    private PasswordCrackingJob getRunningPasswordCrackingJob() {
+        for (PasswordCrackingJob job : getPasswordCrackingJobs()) {
+            if (job.isStarted() && !job.isSolved() && job.getPermutationGenerator() != null && !job.getPermutationGenerator().isDone())
+                return job;
+        }
+        return null;
+    }
 
-        if (task != null) {
-            PasswordCrackingJob job = getPasswordCrackingJobMap().get(passwordCrackingJobId);
-            task.setPermutations(new LinkedList<>(job.getPermutationGenerator().getNextBatch(getCHUNK_SIZE())));
+    private void sendNextTaskToWorker(ActorRef worker, String passwordCrackingJobId) {
+        PasswordCrackingJob job = getPasswordCrackingJobMap().get(passwordCrackingJobId);
+
+        if (job.getPermutationGenerator() != null && !job.getPermutationGenerator().isDone()) {
+            Worker.CompareMessage task = new Worker.CompareMessage(
+                    new LinkedList<>(job.readyToCrackPassword() ? Collections.singletonList(job.getHash()) : job.getHints()),
+                    new LinkedList<>(job.getPermutationGenerator().getNextBatch(getCHUNK_SIZE())),
+                    passwordCrackingJobId);
             if (task.getPermutations().isEmpty()) { // no permutations left
-                getTasks().get(passwordCrackingJobId).clear();
                 sendNextTaskToWorker(worker);
-                return;
+            } else {
+                worker.tell(task, self());
             }
-            task.setHashes(new LinkedList<>(task.getJobType().equals(Worker.CompareMessage.Type.HINT) ? job.getHints() : Collections.singletonList(job.getHash())));
-            worker.tell(task, self());
         }
     }
 

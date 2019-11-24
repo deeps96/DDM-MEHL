@@ -1,7 +1,5 @@
 package de.hpi.ddm;
 
-import org.apache.commons.lang3.tuple.Pair;
-
 import java.io.UnsupportedEncodingException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -129,11 +127,11 @@ public class Utils {
         }
     }
 
-    public static Pair<PermutationGenerator, Integer> permutationsForPasswordCracking(char[] A, int k) {
+    public static PermutationGenerator permutationsForPasswordCracking(char[] A, int k) {
         Queue<String> combinations = new LinkedList<>();
         List<Character> out = new ArrayList<>();
         combinationWithRepetition(A, out, k, 0, A.length, combinations);
-        return Pair.of(new PermutationGenerator(combinations), combinations.size());
+        return new PermutationGenerator(combinations);
     }
 
     public static PermutationGenerator permutationsForHintCracking(char[] A) {

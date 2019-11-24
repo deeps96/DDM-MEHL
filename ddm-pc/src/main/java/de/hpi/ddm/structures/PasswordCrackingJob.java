@@ -1,7 +1,10 @@
 package de.hpi.ddm.structures;
 
 import de.hpi.ddm.PermutationGenerator;
+import lombok.AccessLevel;
 import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.util.LinkedList;
 import java.util.UUID;
@@ -10,6 +13,8 @@ import java.util.stream.Collectors;
 @Data
 public class PasswordCrackingJob {
 
+    @Getter(AccessLevel.NONE) @Setter(AccessLevel.NONE)
+    private boolean readyToCrackPassword = false;
     private boolean started = false;
     private int passwordLength;
     private int unresolvedHintCount;
@@ -44,21 +49,22 @@ public class PasswordCrackingJob {
 
     public boolean hasUnresolvedHints() { return getUnresolvedHintCount() > 0; }
 
-    public boolean allHintsSolved() { return getUnresolvedHintCount() == 0; }
-
     public void decrementUnresolvedHintCount() { setUnresolvedHintCount(getUnresolvedHintCount() - 1); }
 
     public boolean isSolved() { return getCrackedPassword() != null; }
 
 
     public boolean readyToCrackPassword() {
-        if(getUnresolvedHintCount() == 0) {
+        if(getUnresolvedHintCount() == 0 || this.readyToCrackPassword) {
             return true;
         }
 
-        long numberOfPasswordCombinations = (long) Math.pow(getRemainingChars().size(), getPasswordLength());
-        long numberOfUnsolvedHintCombinations = getUnresolvedHintCount() * getNumberOfPermutationsPerHint();
+        return false;
 
-        return numberOfPasswordCombinations <= numberOfUnsolvedHintCombinations;
+//        long numberOfPasswordCombinations = (long) Math.pow(getRemainingChars().size(), getPasswordLength());
+//        long numberOfUnsolvedHintCombinations = getUnresolvedHintCount() * getNumberOfPermutationsPerHint();
+//
+//        this.readyToCrackPassword = numberOfPasswordCombinations <= numberOfUnsolvedHintCombinations;
+//        return this.readyToCrackPassword;
     }
 }

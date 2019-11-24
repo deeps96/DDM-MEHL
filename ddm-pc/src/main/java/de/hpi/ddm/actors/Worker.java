@@ -14,10 +14,8 @@ import de.hpi.ddm.MasterSystem;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.apache.commons.lang3.tuple.Pair;
 
 import java.io.Serializable;
-import java.util.Arrays;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -48,14 +46,9 @@ public class Worker extends AbstractLoggingActor {
 	static class CompareMessage implements Serializable {
 		private static final long serialVersionUID = 3303081601659723997L;
 
-		public enum Type { HINT, PASSWORD };
-
-		private int offset;
-		private int length;
 		private LinkedList<String> hashes;
 		private LinkedList<String> permutations;
 		private String jobId;
-		private Type jobType;
 	}
 
 	/////////////////
@@ -123,30 +116,26 @@ public class Worker extends AbstractLoggingActor {
 	}
 
 	private void handle(CompareMessage compareMessage) {
-		Pair<Boolean, LinkedList<Master.CompareResult.Result>> result = findPermutationForHash(
-				new LinkedList<>(Arrays.asList(new String[compareMessage.getLength()])),
+		LinkedList<Master.CompareResult.Result> result = findPermutationForHash(
 				compareMessage.getHashes(),
 				compareMessage.getPermutations());
 
 		this.sender()
-				.tell(new Master.CompareResult(result.getRight(), compareMessage.getJobId()), this.self());
+				.tell(new Master.CompareResult(result, compareMessage.getJobId()), this.self());
 	}
 
-	private Pair<Boolean, LinkedList<Master.CompareResult.Result>> findPermutationForHash(List<String> hashCache, List<String> targetHashes, List<String> permutations) {
-		boolean updatedCache = false;
+	private LinkedList<Master.CompareResult.Result> findPermutationForHash(List<String> targetHashes, List<String> permutations) {
 		LinkedList<Master.CompareResult.Result> resolvedHashes = new LinkedList<>();
-		for (int iEntry = 0; iEntry < hashCache.size(); iEntry++) {
-			hashCache.set(iEntry, hash(permutations.get(iEntry)));
-			updatedCache = true;
+		for (String permutation : permutations) {
 			for (Iterator<String> targetHashIterator = targetHashes.iterator(); targetHashIterator.hasNext();) {
 				String targetHash = targetHashIterator.next();
-				if (hashCache.get(iEntry).equals(targetHash)) {
-					resolvedHashes.add(new Master.CompareResult.Result(targetHash, permutations.get(iEntry)));
+				if (hash(permutation).equals(targetHash)) {
+					resolvedHashes.add(new Master.CompareResult.Result(targetHash, permutation));
 					targetHashIterator.remove();
 				}
 			}
 			if (targetHashes.size() == 0) break;
 		}
-		return Pair.of(updatedCache, resolvedHashes);
+		return resolvedHashes;
 	}
 }
