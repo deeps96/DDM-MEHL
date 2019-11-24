@@ -49,6 +49,7 @@ public class Worker extends AbstractLoggingActor {
 		private LinkedList<String> hashes;
 		private LinkedList<String> permutations;
 		private String jobId;
+		private String taskId;
 	}
 
 	/////////////////
@@ -121,7 +122,7 @@ public class Worker extends AbstractLoggingActor {
 				compareMessage.getPermutations());
 
 		this.sender()
-				.tell(new Master.CompareResult(result, compareMessage.getJobId()), this.self());
+				.tell(new Master.CompareResult(result, compareMessage.getJobId(), compareMessage.getTaskId()), this.self());
 	}
 
 	private LinkedList<Master.CompareResult.Result> findPermutationForHash(List<String> targetHashes, List<String> permutations) {

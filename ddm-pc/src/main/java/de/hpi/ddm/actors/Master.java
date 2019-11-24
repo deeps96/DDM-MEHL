@@ -58,6 +58,7 @@ public class Master extends AbstractLoggingActor {
         private static final long serialVersionUID = 1294419813760526676L;
         private LinkedList<Result> resolvedHashes;
         private String jobId;
+        private String taskId;
 
         boolean hasResult() {
             return !getResolvedHashes().isEmpty();
@@ -83,7 +84,9 @@ public class Master extends AbstractLoggingActor {
 
     @Setter(AccessLevel.PRIVATE)
     private boolean isFetchingNextBatch = false;
+    private final HashMap<ActorRef, Collection<Worker.CompareMessage>> messages = new HashMap<>();
     private final HashMap<String, PasswordCrackingJob> passwordCrackingJobMap = new HashMap<>();
+    private final Collection<Worker.CompareMessage> droppedMessages = new LinkedList<>();
     private final Queue<PasswordCrackingJob> passwordCrackingJobs = new LinkedList<>();
 
     /////////////////////
@@ -141,6 +144,7 @@ public class Master extends AbstractLoggingActor {
         if(DEBUG)
             System.out.print(".");
 
+        removeTaskFromMessages(message, sender());
         if (message.hasResult() && getPasswordCrackingJobMap().containsKey(message.getJobId())) {
             PasswordCrackingJob job = getPasswordCrackingJobMap().get(message.getJobId());
 
@@ -167,6 +171,14 @@ public class Master extends AbstractLoggingActor {
             sendNextTaskToWorker(sender(), message.getJobId());
         else
             sendNextTaskToWorker(sender());
+    }
+
+    private void removeTaskFromMessages(CompareResult message, ActorRef sender) {
+        for (Iterator<Worker.CompareMessage> iterator = getMessages().get(sender).iterator(); iterator.hasNext();)
+            if (iterator.next().getTaskId().equals(message.getTaskId())) {
+                iterator.remove();
+                break;
+            }
     }
 
     private void prepareNextPasswordCrackingJob() {
@@ -281,11 +293,13 @@ public class Master extends AbstractLoggingActor {
             Worker.CompareMessage task = new Worker.CompareMessage(
                     new LinkedList<>(job.readyToCrackPassword() ? Collections.singletonList(job.getHash()) : job.getHints()),
                     new LinkedList<>(job.getPermutationGenerator().getNextBatch(getCHUNK_SIZE())),
-                    passwordCrackingJobId);
+                    passwordCrackingJobId,
+                    UUID.randomUUID().toString());
             if (task.getPermutations().isEmpty()) { // no permutations left
                 sendNextTaskToWorker(worker);
             } else {
                 worker.tell(task, self());
+                getMessages().get(worker).add(task);
             }
         }
     }
@@ -293,12 +307,30 @@ public class Master extends AbstractLoggingActor {
     private void handle(RegistrationMessage message) {
         context().watch(sender());
         getWorkers().add(sender());
-        sendNextTaskToWorker(sender());
+        getMessages().put(sender(), new LinkedList<>());
+        if (!getDroppedMessages().isEmpty()) {
+            getDroppedMessages().forEach(droppedMessage ->
+                    sender().tell(droppedMessage, self()));
+            getDroppedMessages().clear();
+        } else
+            sendNextTaskToWorker(sender());
     }
 
     private void handle(Terminated message) {
-        this.context().unwatch(message.getActor());
         this.workers.remove(message.getActor());
+        Collection<Worker.CompareMessage> unhandledMessages = getMessages().getOrDefault(message.getActor(), Collections.emptyList());
+        if (!getWorkers().isEmpty()) {
+            int iWorker = 0;
+            for (Worker.CompareMessage unhandledMessage : unhandledMessages) {
+                getWorkers().get(iWorker).tell(unhandledMessage, self());
+                iWorker++;
+                if (iWorker == getWorkers().size()) iWorker = 0;
+            }
+        } else {
+            getDroppedMessages().addAll(unhandledMessages);
+        }
+        getMessages().remove(message.getActor());
+        this.context().unwatch(message.getActor());
     }
 
     private void terminate() {
