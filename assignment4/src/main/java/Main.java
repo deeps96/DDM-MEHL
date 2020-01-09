@@ -1,26 +1,24 @@
-import org.apache.spark.SparkConf;
-import org.apache.spark.api.java.JavaPairRDD;
-import org.apache.spark.api.java.JavaRDD;
-import org.apache.spark.api.java.JavaSparkContext;
-import scala.Tuple2;
-
-import java.util.Arrays;
+import org.apache.spark.api.java.function.ForeachFunction;
+import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Row;
+import org.apache.spark.sql.SparkSession;
 
 public class Main {
     public static void main(String[] args){
-        //Create a SparkContext to initialize
-        SparkConf conf = new SparkConf().setMaster("local").setAppName("Word Count");
+        SparkSession sparkSession = SparkSession
+                .builder()
+                .master("local[4]")
+                .appName("INDDetector")
+                .getOrCreate();
 
-        // Create a Java version of the Spark Context
-        JavaSparkContext sc = new JavaSparkContext(conf);
+        Dataset dataset = sparkSession
+                .read()
+                .option("delimiter", ";")
+                .option("header", "true")
+                .csv("../TPCH/tpch_region.csv");
 
-        // Load the text into a Spark RDD, which is a distributed representation of each line of text
-        JavaRDD<String> textFile = sc.textFile("/Users/Emanuel/Documents/Studium/Master/DDM/spark-3.0.0-preview2-bin-hadoop2.7/README.md");
-        JavaPairRDD<String, Integer> counts = textFile
-                .flatMap(s -> Arrays.asList(s.split("[ ,]")).iterator())
-                .mapToPair(word -> new Tuple2<>(word, 1))
-                .reduceByKey((a, b) -> a + b);
-        counts.foreach(p -> System.out.println(p));
-        System.out.println("Total words: " + counts.count());
+        dataset.repartition(32);
+
+        dataset.show();
     }
 }
