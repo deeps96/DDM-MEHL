@@ -11,7 +11,7 @@ object Sindy extends CliMain[Unit](
   name = "Sindy",
   description = "Inclusion Dependency Detection") {
 
-  var path: String = opt[String](description = "Path to TPCH directory", default = "TPCH/")
+  var path: String = opt[String](description = "Path to TPCH directory", default = "TPCH")
   var cores: Int = opt[Int](description = "Number of cores", default = 4)
 
   def run: Unit = {
@@ -24,7 +24,7 @@ object Sindy extends CliMain[Unit](
     val sparkBuilder = SparkSession
       .builder()
       .appName("indDiscovery")
-      .config("spark.sql.shuffle.partitions", cores * 2) // "In general, we recommend 2-3 tasks per CPU core in your cluster." http://spark.apache.org/docs/latest/tuning.html#level-of-parallelism
+      .config("spark.sql.shuffle.partitions", cores * 3) // "In general, we recommend 2-3 tasks per CPU core in your cluster." http://spark.apache.org/docs/latest/tuning.html#level-of-parallelism
       .master(s"local[${cores}]") // #Distribute
     val spark = sparkBuilder.getOrCreate()
     import spark.implicits._
