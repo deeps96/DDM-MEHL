@@ -1,11 +1,9 @@
 package de.hpi.spark.idd
 
 import java.io.File
-import java.util.Date
 
 import org.apache.log4j.{Level, Logger}
-import org.apache.spark.sql.{Row, SparkSession}
-import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.SparkSession
 import org.backuity.clist._
 
 object Sindy extends CliMain[Unit](
@@ -40,19 +38,24 @@ object Sindy extends CliMain[Unit](
         .csv(file.getAbsolutePath)
     )
 
-    val columns = dataFrames.flatMap(df => df.schema.fieldNames).toSet
+    val columnsNames = dataFrames.flatMap(df => df.schema.fieldNames)
+    val columns = List.range(0, columnsNames.size).toSet
     val bcColumns = spark.sparkContext.broadcast(columns)
     dataFrames
-      .map(dataFrame => {
+      .zipWithIndex
+      .map({ case (dataFrame, iDataFrame) =>
+        val offset = dataFrames
+          .take(iDataFrame)
+          .map(dataFrame => dataFrame.columns.length)
+          .sum
         dataFrame
           .flatMap(row =>
             row
               .toSeq
               .map(seq => seq.toString)
-              .zip(row.schema.fieldNames)
+              .zip(List.range(offset, offset + row.schema.fieldNames.length))
           )
-        }
-      )
+      })
       .reduce(_.union(_))
       .groupByKey(_._1)
       .mapValues(_._2)
@@ -68,6 +71,8 @@ object Sindy extends CliMain[Unit](
       .map({case (column, exclusions) => (column, columns.diff(exclusions) - column)})
       .toSeq
       .filter(_._2.nonEmpty)
+      .map({ case (column, inclusions) =>
+        (columnsNames(column), inclusions.map(inclusion => columnsNames(inclusion)))})
       .sortBy(_._1)
       .foreach({ case (column, inclusions) => println(s"$column < ${inclusions.mkString(", ")}")})
     bcColumns.destroy()
