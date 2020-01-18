@@ -38,13 +38,6 @@
       <!--<scope>provided</scope>-->
     </dependency>
 
-    <dependency>
-      <groupId>org.apache.spark</groupId>
-      <artifactId>spark-mllib_2.11</artifactId>
-      <version>2.4.0</version>
-      <!--<scope>provided</scope>-->
-    </dependency>
-
     <!-- https://mvnrepository.com/artifact/org.backuity.clist/clist-core -->
     <dependency>
       <groupId>org.backuity.clist</groupId>
