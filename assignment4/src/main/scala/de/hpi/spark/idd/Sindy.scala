@@ -1,6 +1,7 @@
 package de.hpi.spark.idd
 
 import java.io.File
+import java.util.Date
 
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.sql.SparkSession
@@ -24,13 +25,13 @@ object Sindy extends CliMain[Unit](
       .builder()
       .appName("indDiscovery")
       .config("spark.sql.shuffle.partitions", cores * 3) // "In general, we recommend 2-3 tasks per CPU core in your cluster." http://spark.apache.org/docs/latest/tuning.html#level-of-parallelism
-      .master(s"local[$cores]") // #Distribute
+      .master(s"local[$cores]")
     val spark = sparkBuilder.getOrCreate()
     import spark.implicits._
 
-    val files = directory.listFiles().filter(_.isFile).filter(_.getName.endsWith(".csv")).toList //#Distribute
+    val files = directory.listFiles().filter(_.isFile).filter(_.getName.endsWith(".csv")).toList
 
-//    println(new Date().toString)
+    println(new Date().toString)
     val dataFrames = files.map(file =>
       spark.read
         .option("sep", ";")
@@ -38,44 +39,45 @@ object Sindy extends CliMain[Unit](
         .csv(file.getAbsolutePath)
     )
 
-    val columnsNames = dataFrames.flatMap(df => df.schema.fieldNames)
-    val columns = List.range(0, columnsNames.size).toSet
-    val bcColumns = spark.sparkContext.broadcast(columns)
+    val columnsNames = dataFrames.map(df => df.schema.fieldNames)
+    val bcColumns = spark.sparkContext.broadcast(columnsNames)
+    val flatColumnNames = columnsNames.flatten
     dataFrames
       .zipWithIndex
       .map({ case (dataFrame, iDataFrame) =>
-        val offset = dataFrames
+        val offset = bcColumns.value
           .take(iDataFrame)
-          .map(dataFrame => dataFrame.columns.length)
+          .map(_.length)
           .sum
         dataFrame
           .flatMap(row =>
             row
               .toSeq
-              .map(seq => seq.toString)
+              .asInstanceOf[Seq[String]]
               .zip(List.range(offset, offset + row.schema.fieldNames.length))
           )
       })
       .reduce(_.union(_))
+      .distinct
       .groupByKey(_._1)
       .mapValues(_._2)
       .mapGroups((_, value) => value.toSet)
-      .map(columnsWithValue => {
-        val valuesExcluded = bcColumns.value.diff(columnsWithValue)
+      .distinct
+      .map(columnsWithValue =>
         columnsWithValue
-          .map(columnWithValue => (columnWithValue, valuesExcluded))
+          .map(columnWithValue => (columnWithValue, columnsWithValue))
           .toMap
-      })
+      )
       .reduce((leftMap, rightMap) =>
-        leftMap ++ rightMap.map{ case (k,v) => k -> (if (leftMap.contains(k)) v.union(leftMap(k)) else v) })
-      .map({case (column, exclusions) => (column, columns.diff(exclusions) - column)})
+        leftMap ++ rightMap.map{ case (k,v) => k -> (if (leftMap.contains(k)) v.intersect(leftMap(k)) else v) })
+      .map({ case (column, inclusions) => (column, inclusions - column)})
       .toSeq
       .filter(_._2.nonEmpty)
       .map({ case (column, inclusions) =>
-        (columnsNames(column), inclusions.map(inclusion => columnsNames(inclusion)))})
+        (flatColumnNames(column), inclusions.map(inclusion => flatColumnNames(inclusion)))})
       .sortBy(_._1)
       .foreach({ case (column, inclusions) => println(s"$column < ${inclusions.mkString(", ")}")})
+    println(new Date().toString)
     bcColumns.destroy()
-//    println(new Date().toString)
   }
 }
